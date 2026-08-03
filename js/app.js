@@ -2966,7 +2966,9 @@ window.abrirModalRegistrarPago = async function (inmueblePreferido = '') {
     }
 };
 
+const cargarFinanzasConCuotasBase = window.loadFinanzas;
 window.loadFinanzas = async function () {
+    await cargarFinanzasConCuotasBase();
     const [carteraR, pendientesR, historialR] = await Promise.all([
         fetch('api/finanzas.php?action=cartera'),
         fetch('api/finanzas.php?action=pagos_pendientes'),
@@ -3798,10 +3800,21 @@ loadReclamaciones = async function () {
 };
 
 
-function abrirConfiguracionCuotasAdministracion() {
-    const panel = document.getElementById('panel-cuotas-configuradas');
+let cargaConfiguracionCuotasEnCurso = null;
+
+async function abrirConfiguracionCuotasAdministracion() {
+    let panel = document.getElementById('panel-cuotas-configuradas');
     if (!panel) {
-        window.notificar('La configuración de cuotas todavía está cargando. Intenta de nuevo en un momento.', 'info');
+        if (!cargaConfiguracionCuotasEnCurso) {
+            cargaConfiguracionCuotasEnCurso = Promise.resolve(window.loadFinanzas()).finally(() => {
+                cargaConfiguracionCuotasEnCurso = null;
+            });
+        }
+        await cargaConfiguracionCuotasEnCurso;
+        panel = document.getElementById('panel-cuotas-configuradas');
+    }
+    if (!panel) {
+        window.notificar('No fue posible cargar la configuración de cuotas. Intenta recargar la página.', 'error');
         return;
     }
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
