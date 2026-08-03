@@ -78,12 +78,68 @@ function loadView(viewName) {
         if (viewName === 'zonas') loadZonas();
         if (viewName === 'reclamaciones') loadReclamaciones();
         if (viewName === 'porteria') loadPorteria();
+        if (viewName === 'finanzas') loadFinanzas();
     } else {
         container.innerHTML = `<div class="view card"><h2>En construcción</h2></div>`;
     }
 }
 
 // Data Loaders
+async function loadFinanzas() {
+    // Cargar Cartera
+    const resC = await fetch('api/finanzas.php?action=list_cartera');
+    const dataC = await resC.json();
+    if(dataC.status === 'success') {
+        const tb = document.getElementById('tb-cartera');
+        tb.innerHTML = dataC.data.length === 0 ? '<tr><td colspan="3">No hay cartera pendiente</td></tr>' :
+            dataC.data.map(c => `<tr><td>${c.id}</td><td>${c.torre || ''} ${c.apartamento}</td><td><b>$${c.mora_actual}</b></td></tr>`).join('');
+    }
+
+    // Cargar Pagos
+    const resP = await fetch('api/finanzas.php?action=list_pagos');
+    const dataP = await resP.json();
+    if(dataP.status === 'success') {
+        const tb = document.getElementById('tb-pagos');
+        tb.innerHTML = dataP.data.length === 0 ? '<tr><td colspan="4">No hay pagos recientes</td></tr>' :
+            dataP.data.map(p => `<tr><td>${p.apartamento}</td><td><span style="color:#16a34a">+$${p.valor}</span></td><td>${p.metodo_pago}</td><td>${p.fecha_pago}</td></tr>`).join('');
+    }
+
+    // Forms
+    const formCobro = document.getElementById('formGenerarCobro');
+    if (formCobro) {
+        formCobro.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('action', 'generar_cobro');
+            formData.append('valor', document.getElementById('cobroValor').value);
+            formData.append('mes', document.getElementById('cobroMes').value);
+            formData.append('anio', document.getElementById('cobroAnio').value);
+            
+            const r = await fetch('api/finanzas.php', {method: 'POST', body: formData});
+            const d = await r.json();
+            alert(d.message);
+            if (d.status === 'success') loadFinanzas();
+        };
+    }
+
+    const formPago = document.getElementById('formRegistrarPago');
+    if (formPago) {
+        formPago.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('action', 'registrar_pago');
+            formData.append('inmueble_id', document.getElementById('pagoInmuebleId').value);
+            formData.append('valor', document.getElementById('pagoValor').value);
+            formData.append('metodo', document.getElementById('pagoMetodo').value);
+            
+            const r = await fetch('api/finanzas.php', {method: 'POST', body: formData});
+            const d = await r.json();
+            alert(d.message);
+            if (d.status === 'success') loadFinanzas();
+        };
+    }
+}
+
 async function loadPorteria() {
     // Cargar Visitantes
     const resV = await fetch('api/porteria.php?action=list_visitantes');

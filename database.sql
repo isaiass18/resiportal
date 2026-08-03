@@ -128,6 +128,30 @@ CREATE TABLE IF NOT EXISTS paquetes (
     FOREIGN KEY (recibido_por) REFERENCES usuarios(id) ON DELETE SET NULL
 );
 
+-- Sprint 2: Finanzas y Cartera
+CREATE TABLE IF NOT EXISTS cuotas_administracion (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    inmueble_id INT NOT NULL,
+    mes INT NOT NULL,
+    anio INT NOT NULL,
+    valor DECIMAL(12,2) NOT NULL,
+    estado ENUM('pendiente', 'pagado') DEFAULT 'pendiente',
+    fecha_generacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (inmueble_id) REFERENCES inmuebles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS pagos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    inmueble_id INT NOT NULL,
+    valor DECIMAL(12,2) NOT NULL,
+    metodo_pago ENUM('transferencia', 'efectivo', 'pse', 'consignacion') NOT NULL,
+    referencia VARCHAR(100),
+    fecha_pago TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    registrado_por INT,
+    FOREIGN KEY (inmueble_id) REFERENCES inmuebles(id) ON DELETE CASCADE,
+    FOREIGN KEY (registrado_por) REFERENCES usuarios(id) ON DELETE SET NULL
+);
+
 -- Datos por defecto para pruebas
 INSERT IGNORE INTO conjuntos (id, nombre) VALUES (1, 'Conjunto Residencial Demo');
 INSERT IGNORE INTO usuarios (conjunto_id, rol, documento, nombre, email, password_hash) VALUES (1, 'admin', '123456', 'Administrador', 'admin@demo.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi'); -- password: password

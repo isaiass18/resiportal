@@ -19,10 +19,12 @@ Este documento rastrea el progreso de implementación basado en el documento ori
 - [x] **Minuta de portería**: Bitácora digital de novedades del turno.
 - [x] **Paquetes y correspondencia**: Casillero virtual con notificaciones.
 
-## 🔴 3. Pendiente (Sprints 2 y 3)
-- [ ] **Cuotas de administración**: Motor de liquidación mensual.
-- [ ] **Registro de pagos**: Ingreso de recibos de caja.
-- [ ] **Cartera**: Trazabilidad y cruce contable.
+## 🟢 3. Implementado (Sprint 2 - Finanzas)
+- [x] **Cuotas de administración**: Motor de liquidación mensual.
+- [x] **Registro de pagos**: Ingreso de recibos de caja.
+- [x] **Cartera**: Trazabilidad y cruce contable.
+
+## 🔴 4. Pendiente (Sprint 3 - Comunicaciones)
 - [ ] **Comunicados**: Cartelera digital para enviar circulares.
 - [ ] **Documentos**: Gestor documental para actas y manuales.
 - [ ] **Reportes básicos**: Exportación a Excel/PDF de las diferentes tablas.
