@@ -1,5 +1,52 @@
 document.addEventListener('DOMContentLoaded', () => {
-    initApp();
+    checkAuth();
+});
+
+let currentUser = null;
+
+async function checkAuth() {
+    try {
+        const res = await fetch('api/auth.php?action=check');
+        const data = await res.json();
+        
+        if (data.status === 'success') {
+            currentUser = data.data;
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('app').classList.remove('hidden');
+            document.getElementById('topbarName').innerText = currentUser.nombre;
+            initApp();
+        } else {
+            document.getElementById('login-screen').classList.remove('hidden');
+            document.getElementById('app').classList.add('hidden');
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    const formData = new FormData();
+    formData.append('action', 'login');
+    formData.append('email', email);
+    formData.append('password', password);
+
+    const res = await fetch('api/auth.php', { method: 'POST', body: formData });
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+        checkAuth();
+    } else {
+        document.getElementById('loginError').innerText = data.message;
+    }
+});
+
+document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+    await fetch('api/auth.php?action=logout');
+    window.location.reload();
 });
 
 function initApp() {
@@ -11,11 +58,8 @@ function setupNavigation() {
     const navLinks = document.querySelectorAll('.nav-links li');
     navLinks.forEach(link => {
         link.addEventListener('click', (e) => {
-            // Update active state
             navLinks.forEach(l => l.classList.remove('active'));
             e.currentTarget.classList.add('active');
-            
-            // Load view
             const viewName = e.currentTarget.getAttribute('data-view');
             loadView(viewName);
         });
@@ -28,24 +72,65 @@ function loadView(viewName) {
     
     if (template) {
         container.innerHTML = template.innerHTML;
-        // Initialize view specific logic
-        if (viewName === 'importar') {
-            initImportView();
-        }
+        if (viewName === 'importar') initImportView();
+        if (viewName === 'usuarios') loadUsuarios();
+        if (viewName === 'inmuebles') loadInmuebles();
+        if (viewName === 'zonas') loadZonas();
+        if (viewName === 'reclamaciones') loadReclamaciones();
     } else {
-        container.innerHTML = `
-            <div class="view card">
-                <h2>Vista no encontrada</h2>
-                <p>La vista "${viewName}" está en construcción.</p>
-            </div>
-        `;
+        container.innerHTML = `<div class="view card"><h2>En construcción</h2></div>`;
     }
 }
 
+// Data Loaders
+async function loadUsuarios() {
+    const res = await fetch('api/users.php?action=list');
+    const data = await res.json();
+    const tbody = document.getElementById('tb-usuarios');
+    if(data.status === 'success') {
+        tbody.innerHTML = data.data.map(u => `<tr><td>${u.documento}</td><td>${u.nombre}</td><td>${u.email}</td><td><span style="padding:4px 8px; background:var(--primary-light); color:var(--primary); border-radius:12px; font-size:12px; text-transform:uppercase;">${u.rol}</span></td></tr>`).join('');
+    }
+}
+
+async function loadInmuebles() {
+    const res = await fetch('api/inmuebles.php?action=list');
+    const data = await res.json();
+    const tbody = document.getElementById('tb-inmuebles');
+    if(data.status === 'success') {
+        tbody.innerHTML = data.data.map(i => `<tr><td>${i.torre || 'N/A'}</td><td>${i.apartamento}</td><td><b>$${i.mora_actual}</b></td><td>${i.num_vehiculos}</td><td>${i.num_mascotas}</td></tr>`).join('');
+    }
+}
+
+async function loadZonas() {
+    const res = await fetch('api/zonas.php?action=list');
+    const data = await res.json();
+    const tbody = document.getElementById('tb-zonas');
+    if(data.status === 'success') {
+        if(data.data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4">No hay reservas</td></tr>`;
+        } else {
+            tbody.innerHTML = data.data.map(z => `<tr><td>${z.zona_nombre}</td><td>${z.usuario_nombre}</td><td>${z.fecha_reserva}</td><td>${z.estado}</td></tr>`).join('');
+        }
+    }
+}
+
+async function loadReclamaciones() {
+    const res = await fetch('api/reclamaciones.php?action=list');
+    const data = await res.json();
+    const tbody = document.getElementById('tb-reclamaciones');
+    if(data.status === 'success') {
+        if(data.data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4">No hay reclamaciones</td></tr>`;
+        } else {
+            tbody.innerHTML = data.data.map(r => `<tr><td>${r.asunto}</td><td>${r.usuario_nombre}</td><td>${r.creado_en}</td><td>${r.estado}</td></tr>`).join('');
+        }
+    }
+}
+
+// Importar Excel (Logic unchanged)
 function initImportView() {
     const fileInput = document.getElementById('excelFile');
-    
-    fileInput.addEventListener('change', async (e) => {
+    fileInput?.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
@@ -54,18 +139,15 @@ function initImportView() {
         formData.append('action', 'get_headers');
 
         try {
-            // Simulating API call to read headers
-            // In a real environment: await fetch('api/import.php', { method: 'POST', body: formData })
-            
-            alert('En producción esto subirá el archivo a api/import.php y leerá las cabeceras.');
-            
-            // Simularemos unas cabeceras leidas del Excel:
-            const excelHeaders = ['TORRE', 'INMUEBLE', 'NOMBRE', 'DOCUMENTO DE IDENTIDAD', 'PLACA'];
-            
-            showMappingInterface(excelHeaders);
-            
+            const res = await fetch('api/import.php', { method: 'POST', body: formData });
+            const data = await res.json();
+            if(data.status === 'success') {
+                showMappingInterface(data.data.headers);
+            } else {
+                alert(data.message);
+            }
         } catch (error) {
-            console.error('Error al subir archivo', error);
+            console.error(error);
         }
     });
 }
@@ -73,8 +155,6 @@ function initImportView() {
 function showMappingInterface(excelHeaders) {
     const mappingSection = document.getElementById('mappingSection');
     const mappingForm = document.getElementById('mappingForm');
-    
-    // Campos requeridos en nuestra base de datos para crear un inmueble/usuario
     const systemFields = [
         { key: 'torre', label: 'Torre / Bloque' },
         { key: 'apartamento', label: 'Apartamento / Inmueble' },
@@ -84,30 +164,19 @@ function showMappingInterface(excelHeaders) {
     ];
 
     let html = '';
-    
     systemFields.forEach(field => {
         let optionsHtml = '<option value="">-- No mapear --</option>';
         excelHeaders.forEach((header, index) => {
-            // Intentar auto-seleccionar por nombre
             const selected = header.toLowerCase().includes(field.key.split('_')[0]) ? 'selected' : '';
             optionsHtml += `<option value="${index}" ${selected}>Columna: ${header}</option>`;
         });
-
-        html += `
-            <div class="mapping-item">
-                <label>${field.label}</label>
-                <select name="map_${field.key}">
-                    ${optionsHtml}
-                </select>
-            </div>
-        `;
+        html += `<div class="mapping-item"><label>${field.label}</label><select name="map_${field.key}">${optionsHtml}</select></div>`;
     });
 
     mappingForm.innerHTML = html;
     mappingSection.classList.remove('hidden');
 
-    document.getElementById('btnProcesarImportacion').onclick = () => {
-        alert('Se enviará el mapeo a api/import.php para procesar las filas e insertarlas en MySQL.');
-        // fetch('api/import.php', { action: 'process', mapping: ... })
+    document.getElementById('btnProcesarImportacion').onclick = async () => {
+        alert('Integración Backend pendiente (demo).');
     };
 }

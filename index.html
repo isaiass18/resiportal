@@ -9,7 +9,21 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <div id="app">
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-overlay">
+        <div class="login-box">
+            <h2>ResiPortal</h2>
+            <p>Inicia sesión para continuar</p>
+            <form id="loginForm">
+                <input type="email" id="loginEmail" placeholder="Correo electrónico" required>
+                <input type="password" id="loginPassword" placeholder="Contraseña" required>
+                <button type="submit" class="btn btn-primary" style="width: 100%">Entrar</button>
+                <div id="loginError" class="login-error"></div>
+            </form>
+        </div>
+    </div>
+
+    <div id="app" class="hidden">
         <!-- Sidebar Navigation -->
         <nav class="sidebar" id="sidebar">
             <div class="sidebar-header">
@@ -41,11 +55,11 @@
                 <div class="user-profile">
                     <div class="notifications">
                         <i class="fa-regular fa-bell"></i>
-                        <span class="badge">3</span>
+                        <span class="badge">0</span>
                     </div>
                     <div class="avatar">
                         <img src="https://ui-avatars.com/api/?name=Admin&background=eff6ff&color=3b82f6" alt="User">
-                        <span>Admin</span>
+                        <span id="topbarName">Cargando...</span>
                     </div>
                 </div>
             </header>
@@ -76,19 +90,76 @@
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon" style="background: #fef3c7; color: #d97706"><i class="fa-solid fa-car"></i></div>
+                    <div class="stat-icon" style="background: #fee2e2; color: #dc2626"><i class="fa-solid fa-money-bill-wave"></i></div>
                     <div class="stat-info">
-                        <h3>Vehículos</h3>
-                        <p class="stat-number">185</p>
+                        <h3>Cartera (Mora)</h3>
+                        <p class="stat-number">$1.2M</p>
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon" style="background: #fee2e2; color: #dc2626"><i class="fa-solid fa-clipboard-list"></i></div>
+                    <div class="stat-icon" style="background: #fef3c7; color: #d97706"><i class="fa-solid fa-clipboard-list"></i></div>
                     <div class="stat-info">
                         <h3>Reclamaciones</h3>
                         <p class="stat-number">4</p>
                     </div>
                 </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="tpl-usuarios">
+        <div class="view">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+                <h1 class="page-title" style="margin:0">Usuarios</h1>
+                <button class="btn btn-primary"><i class="fa-solid fa-plus"></i> Nuevo Usuario</button>
+            </div>
+            <div class="card">
+                <table class="data-table">
+                    <thead><tr><th>Documento</th><th>Nombre</th><th>Email</th><th>Rol</th></tr></thead>
+                    <tbody id="tb-usuarios"><tr><td colspan="4">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </template>
+
+    <template id="tpl-inmuebles">
+        <div class="view">
+            <h1 class="page-title">Inmuebles y Estados de Cuenta</h1>
+            <div class="card">
+                <table class="data-table">
+                    <thead><tr><th>Torre</th><th>Apto</th><th>Mora Actual</th><th>Vehículos</th><th>Mascotas</th></tr></thead>
+                    <tbody id="tb-inmuebles"><tr><td colspan="5">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </template>
+
+    <template id="tpl-zonas">
+        <div class="view">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+                <h1 class="page-title" style="margin:0">Zonas Sociales y Reservas</h1>
+                <button class="btn btn-primary"><i class="fa-solid fa-calendar-plus"></i> Nueva Reserva</button>
+            </div>
+            <div class="card">
+                <table class="data-table">
+                    <thead><tr><th>Zona</th><th>Usuario</th><th>Fecha</th><th>Estado</th></tr></thead>
+                    <tbody id="tb-zonas"><tr><td colspan="4">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </template>
+
+    <template id="tpl-reclamaciones">
+        <div class="view">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+                <h1 class="page-title" style="margin:0">PQRS (Reclamaciones)</h1>
+                <button class="btn btn-primary"><i class="fa-solid fa-plus"></i> Radicar Queja</button>
+            </div>
+            <div class="card">
+                <table class="data-table">
+                    <thead><tr><th>Asunto</th><th>Usuario</th><th>Fecha</th><th>Estado</th></tr></thead>
+                    <tbody id="tb-reclamaciones"><tr><td colspan="4">Cargando...</td></tr></tbody>
+                </table>
             </div>
         </div>
     </template>

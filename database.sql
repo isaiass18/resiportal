@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS inmuebles (
     apartamento VARCHAR(50),
     parqueadero VARCHAR(50),
     coeficiente DECIMAL(10,4),
+    mora_actual DECIMAL(12,2) DEFAULT 0,
     creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (conjunto_id) REFERENCES conjuntos(id) ON DELETE CASCADE
 );

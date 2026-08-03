@@ -345,5 +345,66 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 32px 0; }
     font-family: inherit;
 }
 .mapping-item select:focus {
+
+/* Login & Data Tables */
+.login-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: var(--bg-main);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+.login-box {
+    background: var(--bg-card);
+    padding: 40px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: 400px;
+    text-align: center;
+}
+.login-box h2 {
+    color: var(--primary);
+    margin-bottom: 8px;
+    font-size: 28px;
+}
+.login-box p {
+    color: var(--text-muted);
+    margin-bottom: 24px;
+}
+.login-box input {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    outline: none;
+}
+.login-box input:focus {
     border-color: var(--primary);
 }
+.login-error {
+    color: #dc2626;
+    margin-top: 12px;
+    font-size: 14px;
+}
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.data-table th, .data-table td {
+    padding: 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+.data-table th {
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--bg-main);
+}
+.data-table tr:hover td {
+    background: var(--primary-light);
+}
+
