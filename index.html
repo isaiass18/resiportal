@@ -34,6 +34,7 @@
             </div>
             <ul class="nav-links">
                 <li class="active" data-view="dashboard"><i class="fa-solid fa-house"></i> <span>Dashboard</span></li>
+                <li data-view="porteria"><i class="fa-solid fa-shield-halved"></i> <span>Portería / Visitas</span></li>
                 <li data-view="usuarios"><i class="fa-solid fa-users"></i> <span>Usuarios</span></li>
                 <li data-view="inmuebles"><i class="fa-solid fa-building"></i> <span>Inmuebles</span></li>
                 <li data-view="importar"><i class="fa-solid fa-file-import"></i> <span>Importar Datos</span></li>
@@ -97,10 +98,51 @@
                     </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon" style="background: #fef3c7; color: #d97706"><i class="fa-solid fa-clipboard-list"></i></div>
+                    <div class="stat-icon" style="background: #fef3c7; color: #d97706"><i class="fa-solid fa-shield-halved"></i></div>
                     <div class="stat-info">
-                        <h3>Reclamaciones</h3>
-                        <p class="stat-number">4</p>
+                        <h3>Visitas Hoy</h3>
+                        <p class="stat-number">18</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="tpl-porteria">
+        <div class="view">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+                <h1 class="page-title" style="margin:0">Portería y Seguridad</h1>
+                <div>
+                    <button class="btn btn-primary" style="margin-right:8px;"><i class="fa-solid fa-person-walking-arrow-right"></i> Registrar Visita</button>
+                    <button class="btn btn-primary" style="background:#16a34a"><i class="fa-solid fa-box"></i> Recibir Paquete</button>
+                </div>
+            </div>
+            
+            <h3>Visitas Recientes</h3>
+            <div class="card" style="margin-bottom: 24px;">
+                <table class="data-table">
+                    <thead><tr><th>Visitante</th><th>Apto Destino</th><th>Placa</th><th>Ingreso</th><th>Salida</th></tr></thead>
+                    <tbody id="tb-visitantes"><tr><td colspan="5">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px;">
+                <div>
+                    <h3>Paquetes Pendientes</h3>
+                    <div class="card">
+                        <table class="data-table">
+                            <thead><tr><th>Transportadora</th><th>Apto</th><th>Fecha</th><th>Estado</th></tr></thead>
+                            <tbody id="tb-paquetes"><tr><td colspan="4">Cargando...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div>
+                    <h3>Minuta (Novedades)</h3>
+                    <div class="card">
+                        <table class="data-table">
+                            <thead><tr><th>Fecha</th><th>Vigilante</th><th>Asunto</th></tr></thead>
+                            <tbody id="tb-minuta"><tr><td colspan="3">Cargando...</td></tr></tbody>
+                        </table>
                     </div>
                 </div>
             </div>

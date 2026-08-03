@@ -92,6 +92,42 @@ CREATE TABLE IF NOT EXISTS reclamaciones (
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
 );
 
+-- Sprint 1: Portería y Seguridad
+CREATE TABLE IF NOT EXISTS visitantes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    inmueble_id INT NOT NULL,
+    nombre VARCHAR(150) NOT NULL,
+    documento VARCHAR(50),
+    vehiculo_placa VARCHAR(20),
+    fecha_ingreso TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_salida TIMESTAMP NULL,
+    autorizado_por INT,
+    FOREIGN KEY (inmueble_id) REFERENCES inmuebles(id) ON DELETE CASCADE,
+    FOREIGN KEY (autorizado_por) REFERENCES usuarios(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS minuta_porteria (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    vigilante_id INT NOT NULL,
+    asunto VARCHAR(150) NOT NULL,
+    novedad TEXT NOT NULL,
+    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (vigilante_id) REFERENCES usuarios(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS paquetes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    inmueble_id INT NOT NULL,
+    transportadora VARCHAR(100),
+    descripcion VARCHAR(255),
+    estado ENUM('pendiente', 'entregado') DEFAULT 'pendiente',
+    fecha_recepcion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_entrega TIMESTAMP NULL,
+    recibido_por INT,
+    FOREIGN KEY (inmueble_id) REFERENCES inmuebles(id) ON DELETE CASCADE,
+    FOREIGN KEY (recibido_por) REFERENCES usuarios(id) ON DELETE SET NULL
+);
+
 -- Datos por defecto para pruebas
 INSERT IGNORE INTO conjuntos (id, nombre) VALUES (1, 'Conjunto Residencial Demo');
 INSERT IGNORE INTO usuarios (conjunto_id, rol, documento, nombre, email, password_hash) VALUES (1, 'admin', '123456', 'Administrador', 'admin@demo.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi'); -- password: password

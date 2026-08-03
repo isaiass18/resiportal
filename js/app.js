@@ -77,12 +77,42 @@ function loadView(viewName) {
         if (viewName === 'inmuebles') loadInmuebles();
         if (viewName === 'zonas') loadZonas();
         if (viewName === 'reclamaciones') loadReclamaciones();
+        if (viewName === 'porteria') loadPorteria();
     } else {
         container.innerHTML = `<div class="view card"><h2>En construcción</h2></div>`;
     }
 }
 
 // Data Loaders
+async function loadPorteria() {
+    // Cargar Visitantes
+    const resV = await fetch('api/porteria.php?action=list_visitantes');
+    const dataV = await resV.json();
+    if(dataV.status === 'success') {
+        const tb = document.getElementById('tb-visitantes');
+        tb.innerHTML = dataV.data.length === 0 ? '<tr><td colspan="5">No hay visitas recientes</td></tr>' :
+            dataV.data.map(v => `<tr><td>${v.nombre}</td><td>${v.apartamento || 'N/A'}</td><td>${v.vehiculo_placa || 'Ninguna'}</td><td>${v.fecha_ingreso}</td><td>${v.fecha_salida || '<span style="color:#16a34a">Adentro</span>'}</td></tr>`).join('');
+    }
+
+    // Cargar Paquetes
+    const resP = await fetch('api/porteria.php?action=list_paquetes');
+    const dataP = await resP.json();
+    if(dataP.status === 'success') {
+        const tb = document.getElementById('tb-paquetes');
+        tb.innerHTML = dataP.data.length === 0 ? '<tr><td colspan="4">No hay paquetes pendientes</td></tr>' :
+            dataP.data.map(p => `<tr><td>${p.transportadora}</td><td>${p.apartamento || 'N/A'}</td><td>${p.fecha_recepcion}</td><td>${p.estado}</td></tr>`).join('');
+    }
+
+    // Cargar Minuta
+    const resM = await fetch('api/porteria.php?action=list_minuta');
+    const dataM = await resM.json();
+    if(dataM.status === 'success') {
+        const tb = document.getElementById('tb-minuta');
+        tb.innerHTML = dataM.data.length === 0 ? '<tr><td colspan="3">Minuta vacía</td></tr>' :
+            dataM.data.map(m => `<tr><td>${m.fecha_registro}</td><td>${m.vigilante}</td><td>${m.asunto}</td></tr>`).join('');
+    }
+}
+
 async function loadUsuarios() {
     const res = await fetch('api/users.php?action=list');
     const data = await res.json();
