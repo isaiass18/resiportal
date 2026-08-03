@@ -42,9 +42,13 @@ if ($action === 'mis_pagos') {
     if (!in_array($rol, ['residente', 'propietario'], true)) responseJSON('error', 'Permiso denegado');
     $cuenta = inmuebleUsuario($pdo, $userId, $conjuntoId);
     if (!$cuenta) responseJSON('error', 'No tienes un inmueble asignado');
-    $stmt = $pdo->prepare('SELECT id, valor, metodo_pago, referencia, descripcion, soporte_archivo, estado, fecha_pago FROM pagos WHERE inmueble_id = ? AND registrado_por = ? ORDER BY fecha_pago DESC');
-    $stmt->execute([$cuenta['id'], $userId]);
-    responseJSON('success', '', ['cuenta' => $cuenta, 'historial' => $stmt->fetchAll()]);
+    $pagos = $pdo->prepare('SELECT p.id, p.valor, p.metodo_pago, p.referencia, p.descripcion, p.soporte_archivo, p.estado, p.fecha_pago, u.nombre AS registrado_por_nombre FROM pagos p LEFT JOIN usuarios u ON u.id = p.registrado_por WHERE p.inmueble_id = ? ORDER BY p.fecha_pago DESC');
+    $pagos->execute([$cuenta['id']]);
+    $cuotas = $pdo->prepare('SELECT mes, anio, valor, estado, fecha_generacion FROM cuotas_administracion WHERE inmueble_id = ? ORDER BY anio DESC, mes DESC LIMIT 12');
+    $cuotas->execute([$cuenta['id']]);
+    $proxima = $pdo->prepare('SELECT cuota_administracion FROM inmuebles WHERE id = ? AND conjunto_id = ?');
+    $proxima->execute([$cuenta['id'], $conjuntoId]);
+    responseJSON('success', '', ['cuenta' => $cuenta, 'historial' => $pagos->fetchAll(), 'cuotas' => $cuotas->fetchAll(), 'proxima_cuota' => (float) (($proxima->fetch()['cuota_administracion'] ?? 0))]);
 }
 if ($action === 'reportar_pago') {
     if (!in_array($rol, ['residente', 'propietario'], true)) responseJSON('error', 'Permiso denegado');
@@ -63,7 +67,7 @@ if ($action === 'reportar_pago') {
 }
 if ($action === 'ver_soporte') {
     $pagoId = (int) ($_GET['pago_id'] ?? 0);
-    $sql = $rol === 'admin' ? 'SELECT p.soporte_archivo FROM pagos p JOIN inmuebles i ON i.id = p.inmueble_id WHERE p.id = ? AND i.conjunto_id = ?' : 'SELECT p.soporte_archivo FROM pagos p JOIN inmuebles i ON i.id = p.inmueble_id WHERE p.id = ? AND p.registrado_por = ? AND i.conjunto_id = ?';
+    $sql = $rol === 'admin' ? 'SELECT p.soporte_archivo FROM pagos p JOIN inmuebles i ON i.id = p.inmueble_id WHERE p.id = ? AND i.conjunto_id = ?' : 'SELECT p.soporte_archivo FROM pagos p JOIN inmuebles i ON i.id = p.inmueble_id JOIN relacion_inmuebles_usuarios r ON r.inmueble_id = i.id WHERE p.id = ? AND r.usuario_id = ? AND i.conjunto_id = ?';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($rol === 'admin' ? [$pagoId, $conjuntoId] : [$pagoId, $userId, $conjuntoId]);
     $row = $stmt->fetch();
@@ -81,6 +85,15 @@ if ($action === 'ver_soporte') {
 }
 
 if ($rol !== 'admin') responseJSON('error', 'Permiso denegado');
+if ($action === 'resumen_cartera') {
+    $general = $pdo->prepare('SELECT COALESCE(SUM(mora_actual), 0) AS total_cartera, SUM(mora_actual > 0) AS inmuebles_en_mora, COALESCE(SUM(cuota_administracion), 0) AS proximo_recaudo FROM inmuebles WHERE conjunto_id = ?');
+    $general->execute([$conjuntoId]);
+    $pagos = $pdo->prepare("SELECT SUM(estado = 'pendiente') AS pagos_pendientes, SUM(estado = 'aprobado') AS pagos_aprobados FROM pagos p JOIN inmuebles i ON i.id = p.inmueble_id WHERE i.conjunto_id = ?");
+    $pagos->execute([$conjuntoId]);
+    $cuotas = $pdo->prepare("SELECT COUNT(*) AS cuotas_generadas, COALESCE(SUM(valor), 0) AS valor_cuotas FROM cuotas_administracion c JOIN inmuebles i ON i.id = c.inmueble_id WHERE i.conjunto_id = ? AND c.mes = MONTH(CURRENT_DATE) AND c.anio = YEAR(CURRENT_DATE)");
+    $cuotas->execute([$conjuntoId]);
+    responseJSON('success', '', array_merge($general->fetch() ?: [], $pagos->fetch() ?: [], $cuotas->fetch() ?: []));
+}
 if ($action === 'cartera') {
     $stmt = $pdo->prepare("SELECT i.id, i.torre, i.apartamento, i.nomenclatura, i.mora_actual, u.nombre AS propietario_nombre FROM inmuebles i LEFT JOIN relacion_inmuebles_usuarios r ON r.inmueble_id = i.id AND r.tipo_relacion = 'propietario' LEFT JOIN usuarios u ON u.id = r.usuario_id WHERE i.conjunto_id = ? AND i.mora_actual > 0 ORDER BY i.mora_actual DESC");
     $stmt->execute([$conjuntoId]);
@@ -137,11 +150,110 @@ if ($action === 'registrar_pago') {
         responseJSON('error', $e->getMessage());
     }
 }
-if ($action === 'generar_cobro') {
+if ($action === 'cuotas_configuradas') {
+    $page = max(1, (int) ($_GET['page'] ?? 1));
+    $perPage = min(100, max(10, (int) ($_GET['per_page'] ?? 50)));
+    $busqueda = trim($_GET['q'] ?? '');
+    $bloque = trim($_GET['bloque'] ?? '');
+    $estadoCuota = $_GET['estado_cuota'] ?? 'todas';
+    if (strlen($busqueda) > 100 || !in_array($estadoCuota, ['todas', 'configurada', 'sin_configurar'], true)) responseJSON('error', 'Filtros inválidos');
+
+    $bloqueSql = "COALESCE(NULLIF(i.torre, ''), 'Sin torre')";
+    $condiciones = ['i.conjunto_id = ?'];
+    $parametros = [$conjuntoId];
+    if ($busqueda !== '') {
+        $condiciones[] = "CONCAT_WS(' ', $bloqueSql, i.nomenclatura, COALESCE(i.apartamento, '')) LIKE ?";
+        $parametros[] = '%' . $busqueda . '%';
+    }
+    if ($bloque !== '') {
+        $condiciones[] = "$bloqueSql = ?";
+        $parametros[] = $bloque;
+    }
+    if ($estadoCuota === 'configurada') $condiciones[] = 'COALESCE(i.cuota_administracion, 0) > 0';
+    if ($estadoCuota === 'sin_configurar') $condiciones[] = 'COALESCE(i.cuota_administracion, 0) <= 0';
+    $where = implode(' AND ', $condiciones);
+
+    $totalStmt = $pdo->prepare("SELECT COUNT(*) FROM inmuebles i WHERE $where");
+    $totalStmt->execute($parametros);
+    $total = (int) $totalStmt->fetchColumn();
+    $totalPages = max(1, (int) ceil($total / $perPage));
+    $page = min($page, $totalPages);
+    $offset = ($page - 1) * $perPage;
+
+    $stmt = $pdo->prepare("SELECT i.id, $bloqueSql AS bloque, i.apartamento, i.nomenclatura, i.cuota_administracion FROM inmuebles i WHERE $where ORDER BY bloque, i.nomenclatura, i.id LIMIT $perPage OFFSET $offset");
+    $stmt->execute($parametros);
+    $bloques = $pdo->prepare("SELECT DISTINCT $bloqueSql AS bloque FROM inmuebles i WHERE i.conjunto_id = ? ORDER BY bloque");
+    $bloques->execute([$conjuntoId]);
+    $resumen = $pdo->prepare('SELECT COUNT(*) AS total, SUM(COALESCE(cuota_administracion, 0) > 0) AS configuradas FROM inmuebles WHERE conjunto_id = ?');
+    $resumen->execute([$conjuntoId]);
+    $totales = $resumen->fetch() ?: ['total' => 0, 'configuradas' => 0];
+
+    responseJSON('success', '', [
+        'inmuebles' => $stmt->fetchAll(),
+        'pagination' => ['page' => $page, 'per_page' => $perPage, 'total' => $total, 'total_pages' => $totalPages],
+        'filters' => ['bloques' => array_column($bloques->fetchAll(), 'bloque')],
+        'summary' => ['total' => (int) $totales['total'], 'configuradas' => (int) $totales['configuradas']]
+    ]);
+}
+if ($action === 'configurar_cuota') {
+    $alcance = $_POST['alcance'] ?? '';
     $valor = (float) ($_POST['valor'] ?? 0);
-    if ($valor <= 0) responseJSON('error', 'Valor inválido');
-    $pdo->prepare('UPDATE inmuebles SET mora_actual = mora_actual + ? WHERE conjunto_id = ?')->execute([$valor, $conjuntoId]);
-    responseJSON('success', 'Cobro masivo generado');
+    $idsRecibidos = $_POST['inmueble_ids'] ?? [];
+    $idsJson = trim($_POST['inmueble_ids_json'] ?? '');
+    if ($idsJson !== '') {
+        $decodificados = json_decode($idsJson, true);
+        if (!is_array($decodificados)) responseJSON('error', 'La selección de apartamentos no es válida');
+        $idsRecibidos = $decodificados;
+    }
+    if ($alcance !== 'inmuebles' || $valor <= 0 || !is_array($idsRecibidos)) responseJSON('error', 'Selecciona uno o más apartamentos y un valor mayor a cero');
+
+    $inmuebleIds = array_values(array_unique(array_filter(array_map('intval', $idsRecibidos), fn($id) => $id > 0)));
+    if (!$inmuebleIds) responseJSON('error', 'Selecciona al menos un apartamento');
+    if (count($inmuebleIds) > 5000) responseJSON('error', 'La selección supera el límite de 5000 apartamentos por operación');
+
+    $marcadores = implode(', ', array_fill(0, count($inmuebleIds), '?'));
+    $verificar = $pdo->prepare("SELECT COUNT(*) FROM inmuebles WHERE conjunto_id = ? AND id IN ($marcadores)");
+    $verificar->execute(array_merge([$conjuntoId], $inmuebleIds));
+    if ((int) $verificar->fetchColumn() !== count($inmuebleIds)) responseJSON('error', 'Uno o más apartamentos no pertenecen a este conjunto');
+
+    $actualizar = $pdo->prepare("UPDATE inmuebles SET cuota_administracion = ? WHERE conjunto_id = ? AND id IN ($marcadores)");
+    $actualizar->execute(array_merge([$valor, $conjuntoId], $inmuebleIds));
+    responseJSON('success', 'Cuota configurada para ' . count($inmuebleIds) . ' apartamento(s).');
+}
+if ($action === 'generar_cobro') {
+    $periodo = $_POST['periodo'] ?? '';
+    if (!preg_match('/^(\d{4})-(0[1-9]|1[0-2])$/', $periodo, $coincidencias)) responseJSON('error', 'Selecciona un período válido');
+    $anio = (int) $coincidencias[1];
+    $mes = (int) $coincidencias[2];
+
+    try {
+        $pdo->beginTransaction();
+        $stmt = $pdo->prepare('SELECT id, cuota_administracion FROM inmuebles WHERE conjunto_id = ? AND cuota_administracion > 0 FOR UPDATE');
+        $stmt->execute([$conjuntoId]);
+        $inmuebles = $stmt->fetchAll();
+        if (!$inmuebles) throw new Exception('No hay cuotas configuradas. Asigna primero una tarifa por bloque o inmueble.');
+
+        $buscarCuota = $pdo->prepare('SELECT id FROM cuotas_administracion WHERE inmueble_id = ? AND mes = ? AND anio = ? LIMIT 1 FOR UPDATE');
+        $crearCuota = $pdo->prepare("INSERT INTO cuotas_administracion (inmueble_id, mes, anio, valor, estado) VALUES (?, ?, ?, ?, 'pendiente')");
+        $sumarMora = $pdo->prepare('UPDATE inmuebles SET mora_actual = mora_actual + ? WHERE id = ? AND conjunto_id = ?');
+        $generadas = 0;
+        $omitidas = 0;
+        foreach ($inmuebles as $inmueble) {
+            $buscarCuota->execute([$inmueble['id'], $mes, $anio]);
+            if ($buscarCuota->fetch()) {
+                $omitidas++;
+                continue;
+            }
+            $crearCuota->execute([$inmueble['id'], $mes, $anio, $inmueble['cuota_administracion']]);
+            $sumarMora->execute([$inmueble['cuota_administracion'], $inmueble['id'], $conjuntoId]);
+            $generadas++;
+        }
+        $pdo->commit();
+        responseJSON('success', "Cuotas de $periodo generadas: $generadas. Omitidas por existir previamente: $omitidas.");
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        responseJSON('error', $e->getMessage());
+    }
 }
 if ($action === 'dashboard_financiero') {
     $stmt = $pdo->prepare('SELECT COALESCE(SUM(mora_actual),0) AS total_cartera FROM inmuebles WHERE conjunto_id=?');

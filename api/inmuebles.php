@@ -19,7 +19,7 @@ function getInmuebleId(PDO $pdo, int $userId): ?int
 
 if ($action === 'list') {
     if ($rol !== 'admin') responseJSON('error', 'Sin permisos');
-    $stmt = $pdo->prepare('SELECT i.*, (SELECT COUNT(*) FROM vehiculos v WHERE v.inmueble_id = i.id) AS num_vehiculos, (SELECT COUNT(*) FROM mascotas m WHERE m.inmueble_id = i.id) AS num_mascotas FROM inmuebles i WHERE i.conjunto_id = ? ORDER BY COALESCE(i.torre, i.nomenclatura), i.apartamento');
+    $stmt = $pdo->prepare("SELECT i.*, (SELECT COUNT(*) FROM vehiculos v WHERE v.inmueble_id = i.id) AS num_vehiculos, (SELECT COUNT(*) FROM mascotas m WHERE m.inmueble_id = i.id) AS num_mascotas, a.id AS asignacion_parqueadero_id, p.id AS parqueadero_id, p.codigo AS parqueadero_codigo, p.tipo AS parqueadero_tipo FROM inmuebles i LEFT JOIN asignaciones_parqueadero a ON a.inmueble_id = i.id AND a.retirado_en IS NULL LEFT JOIN parqueaderos p ON p.id = a.parqueadero_id WHERE i.conjunto_id = ? ORDER BY COALESCE(i.torre, i.nomenclatura), i.apartamento");
     $stmt->execute([$conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
 }
@@ -45,14 +45,14 @@ if ($action === 'guardar_inmueble') {
         if ($duplicado->fetch()) responseJSON('error', 'La nomenclatura ya existe');
         $stmt = $pdo->prepare('UPDATE inmuebles SET tipo_unidad = ?, torre = ?, apartamento = ?, nomenclatura = ?, parqueadero = ?, coeficiente = ?, mora_actual = ? WHERE id = ? AND conjunto_id = ?');
         $stmt->execute([$tipo, $torre ?: null, $nomenclatura, $nomenclatura, $parqueadero ?: null, $coeficiente, $mora, $id, $conjuntoId]);
-        responseJSON('success', 'Inmueble actualizado');
+        responseJSON('success', 'Inmueble actualizado', ['id' => $id]);
     }
     $duplicado = $pdo->prepare('SELECT id FROM inmuebles WHERE conjunto_id = ? AND nomenclatura = ?');
     $duplicado->execute([$conjuntoId, $nomenclatura]);
     if ($duplicado->fetch()) responseJSON('error', 'La nomenclatura ya existe');
     $stmt = $pdo->prepare('INSERT INTO inmuebles (conjunto_id, tipo_unidad, torre, apartamento, nomenclatura, parqueadero, coeficiente, mora_actual) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     $stmt->execute([$conjuntoId, $tipo, $torre ?: null, $nomenclatura, $nomenclatura, $parqueadero ?: null, $coeficiente, $mora]);
-    responseJSON('success', 'Inmueble creado');
+    responseJSON('success', 'Inmueble creado', ['id' => (int) $pdo->lastInsertId()]);
 }
 
 if ($action === 'mis_vehiculos' || $action === 'mis_mascotas') {

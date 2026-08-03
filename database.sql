@@ -25,10 +25,25 @@ CREATE TABLE IF NOT EXISTS usuarios (
     email VARCHAR(150),
     password_hash VARCHAR(255),
     contacto VARCHAR(50),
+    activo TINYINT(1) NOT NULL DEFAULT 1,
+    desactivado_en DATETIME NULL,
+    desactivado_por INT NULL,
+    motivo_desactivacion VARCHAR(255) NULL,
     creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_usuarios_conjunto_documento (conjunto_id, documento),
     UNIQUE KEY uq_usuarios_conjunto_email (conjunto_id, email),
-    FOREIGN KEY (conjunto_id) REFERENCES conjuntos (id) ON DELETE CASCADE
+    FOREIGN KEY (conjunto_id) REFERENCES conjuntos (id) ON DELETE CASCADE,
+    CONSTRAINT fk_usuarios_desactivado_por FOREIGN KEY (desactivado_por) REFERENCES usuarios (id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS perfiles_vigilancia (
+    usuario_id INT PRIMARY KEY,
+    turno VARCHAR(50),
+    horario VARCHAR(150),
+    observaciones TEXT,
+    foto_archivo VARCHAR(255),
+    actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS inmuebles (
@@ -40,6 +55,7 @@ CREATE TABLE IF NOT EXISTS inmuebles (
     nomenclatura VARCHAR(100) NOT NULL,
     parqueadero VARCHAR(50),
     coeficiente DECIMAL(10, 4),
+    cuota_administracion DECIMAL(12, 2) NULL,
     mora_actual DECIMAL(12, 2) DEFAULT 0,
     creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_inmuebles_conjunto_nomenclatura (conjunto_id, nomenclatura),
@@ -72,6 +88,43 @@ CREATE TABLE IF NOT EXISTS mascotas (
     FOREIGN KEY (inmueble_id) REFERENCES inmuebles (id) ON DELETE CASCADE
 );
 
+-- Parqueaderos y asignaciones históricas
+CREATE TABLE IF NOT EXISTS parqueaderos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    conjunto_id INT NOT NULL,
+    codigo VARCHAR(50) NOT NULL,
+    tipo ENUM(
+        'privado',
+        'administracion',
+        'visitante',
+        'otro'
+    ) NOT NULL DEFAULT 'administracion',
+    estado ENUM(
+        'disponible',
+        'asignado',
+        'inactivo'
+    ) NOT NULL DEFAULT 'disponible',
+    observaciones VARCHAR(255),
+    creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_parqueadero_conjunto_codigo (conjunto_id, codigo),
+    FOREIGN KEY (conjunto_id) REFERENCES conjuntos (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS asignaciones_parqueadero (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    parqueadero_id INT NOT NULL,
+    inmueble_id INT NOT NULL,
+    asignado_por INT NULL,
+    asignado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    retirado_por INT NULL,
+    retirado_en TIMESTAMP NULL,
+    motivo_retiro VARCHAR(255) NULL,
+    FOREIGN KEY (parqueadero_id) REFERENCES parqueaderos (id) ON DELETE CASCADE,
+    FOREIGN KEY (inmueble_id) REFERENCES inmuebles (id) ON DELETE CASCADE,
+    FOREIGN KEY (asignado_por) REFERENCES usuarios (id) ON DELETE SET NULL,
+    FOREIGN KEY (retirado_por) REFERENCES usuarios (id) ON DELETE SET NULL
+);
+
 -- Zonas Sociales
 CREATE TABLE IF NOT EXISTS zonas_sociales (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -81,6 +134,8 @@ CREATE TABLE IF NOT EXISTS zonas_sociales (
     tarifa DECIMAL(10, 2) DEFAULT 0,
     aforo INT DEFAULT 0,
     horarios VARCHAR(255),
+    max_horas_reserva TINYINT UNSIGNED NOT NULL DEFAULT 1,
+    max_reservas_diarias_inmueble TINYINT UNSIGNED NOT NULL DEFAULT 1,
     reglamento TEXT,
     imagen_url VARCHAR(255),
     youtube_url VARCHAR(255),
@@ -92,14 +147,31 @@ CREATE TABLE IF NOT EXISTS reservas (
     id INT AUTO_INCREMENT PRIMARY KEY,
     zona_id INT NOT NULL,
     usuario_id INT NOT NULL,
+    inmueble_id INT NULL,
     fecha_reserva DATE NOT NULL,
+    hora_inicio TIME NULL,
+    hora_fin TIME NULL,
     estado ENUM(
         'pendiente',
         'aprobada',
         'rechazada'
     ) DEFAULT 'pendiente',
+    KEY idx_reservas_zona_fecha_horario (
+        zona_id,
+        fecha_reserva,
+        estado,
+        hora_inicio,
+        hora_fin
+    ),
+    KEY idx_reservas_inmueble_zona_fecha (
+        inmueble_id,
+        zona_id,
+        fecha_reserva,
+        estado
+    ),
     FOREIGN KEY (zona_id) REFERENCES zonas_sociales (id) ON DELETE CASCADE,
-    FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
+    FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE,
+    FOREIGN KEY (inmueble_id) REFERENCES inmuebles (id) ON DELETE SET NULL
 );
 
 -- Reclamaciones
@@ -139,6 +211,7 @@ CREATE TABLE IF NOT EXISTS minuta_porteria (
     vigilante_id INT NOT NULL,
     asunto VARCHAR(150) NOT NULL,
     novedad TEXT NOT NULL,
+    fecha_novedad DATETIME NULL,
     fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (vigilante_id) REFERENCES usuarios (id) ON DELETE CASCADE
 );

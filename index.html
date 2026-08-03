@@ -12,7 +12,7 @@
     <!-- Swiper JS for sliders -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=20260803">
+    <link rel="stylesheet" href="css/style.css?v=20260816">
 </head>
 
 <body>
@@ -225,13 +225,18 @@
                 <li data-view="home-residente"><i class="fa-solid fa-house-user"></i> <span>Inicio (Cartelera)</span>
                 </li>
                 <li data-view="mis-pagos"><i class="fa-solid fa-file-invoice"></i> <span>Mis Pagos</span></li>
-                <li data-view="porteria"><i class="fa-solid fa-shield-halved"></i> <span>Portería / Visitas</span></li>
+                <li data-view="directorio"><i class="fa-solid fa-address-book"></i> <span>Directorio</span></li>
+                <li data-view="visitas"><i class="fa-solid fa-person-walking-arrow-right"></i> <span>Visitas</span></li>
+                <li data-view="paquetes"><i class="fa-solid fa-box"></i> <span>Paquetes</span></li>
+                <li data-view="minuta"><i class="fa-solid fa-clipboard"></i> <span>Novedades</span></li>
                 <li data-view="finanzas"><i class="fa-solid fa-money-bill-wave"></i> <span>Finanzas / Cartera</span>
                 </li>
                 <li data-view="comunicaciones"><i class="fa-solid fa-bullhorn"></i> <span>Novedades y Eventos</span>
                 </li>
                 <li data-view="usuarios"><i class="fa-solid fa-users"></i> <span>Usuarios</span></li>
+                <li data-view="vigilantes"><i class="fa-solid fa-shield-halved"></i> <span>Vigilantes</span></li>
                 <li data-view="inmuebles"><i class="fa-solid fa-building"></i> <span>Inmuebles</span></li>
+                <li data-view="parqueaderos"><i class="fa-solid fa-square-parking"></i> <span>Parqueaderos</span></li>
                 <li data-view="importar"><i class="fa-solid fa-file-import"></i> <span>Importar Datos</span></li>
                 <li data-view="configuracion"><i class="fa-solid fa-gear"></i> <span>Configuración</span></li>
                 <li data-view="perfil"><i class="fa-solid fa-key"></i> <span>Mi contraseña</span></li>
@@ -482,12 +487,19 @@
 
             <div
                 style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-bottom: 32px;">
-                <div class="card"
+                <div class="card account-summary-card"
                     style="background: linear-gradient(135deg, var(--primary), #3b82f6); color: white; border: none;">
-                    <h3 style="color: white; opacity: 0.9; margin-bottom: 8px;">Deuda Actual</h3>
+                    <h3 class="account-summary-title" style="color: white; opacity: 0.9; margin-bottom: 8px;">Deuda
+                        Actual</h3>
                     <h2 id="txtDeudaResidente" style="font-size: 36px; margin-bottom: 16px;">$0</h2>
                     <p id="txtInmuebleResidente" style="opacity: 0.9; margin: 0;"><i class="fa-solid fa-building"></i>
                         Cargando inmueble...</p>
+                    <div class="account-summary-actions">
+                        <button type="button" class="account-summary-action" onclick="window.verHistorialPagos()"><i
+                                class="fa-solid fa-clock-rotate-left"></i> Ver movimientos</button>
+                        <button type="button" class="account-summary-action" onclick="window.descargarEstadoCuenta()"><i
+                                class="fa-solid fa-file-arrow-down"></i> Descargar resumen</button>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -977,20 +989,40 @@
                     Nueva unidad</button>
             </div>
             <div id="modalInmueble" class="login-modal hidden">
-                <div class="login-box"><button class="close-btn" type="button" onclick="cerrarModalInmueble()"><i
-                            class="fa-solid fa-xmark"></i></button>
-                    <h2 id="inmuebleTitulo">Nueva unidad</h2>
-                    <form id="formInmueble" class="stack-form"><input id="inmuebleId" type="hidden"><select
-                            id="inmuebleTipo" required>
-                            <option value="apartamento">Apartamento</option>
-                            <option value="casa">Casa</option>
-                        </select><input id="inmuebleTorre" placeholder="Torre o bloque (opcional)"><input
-                            id="inmuebleNomenclatura" placeholder="Nomenclatura / unidad" required><input
-                            id="inmuebleParqueadero" placeholder="Parqueadero (opcional)"><input
-                            id="inmuebleCoeficiente" type="number" step="0.0001" min="0"
-                            placeholder="Coeficiente"><input id="inmuebleMora" type="number" step="0.01" min="0"
-                            placeholder="Mora inicial" value="0"><button class="btn btn-primary" type="submit">Guardar
-                            unidad</button></form>
+                <div class="login-box">
+                    <div
+                        style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px;">
+                        <h2 id="inmuebleTitulo" style="margin:0;">Nueva unidad</h2>
+                        <button type="button" onclick="cerrarModalInmueble()"
+                            style="flex:0 0 auto; padding:8px 11px; border:1px solid var(--border); border-radius:8px; background:#f8fafc; color:var(--text-main); font:inherit; font-weight:700; cursor:pointer;">Cerrar
+                            <span aria-hidden="true">×</span></button>
+                    </div>
+                    <form id="formInmueble" class="stack-form">
+                        <input id="inmuebleId" type="hidden">
+                        <label for="inmuebleTipo">Tipo de unidad
+                            <select id="inmuebleTipo" required>
+                                <option value="apartamento">Apartamento</option>
+                                <option value="casa">Casa</option>
+                            </select>
+                        </label>
+                        <label for="inmuebleTorre">Torre o bloque <small>(opcional)</small>
+                            <input id="inmuebleTorre" placeholder="Ej. Torre 1">
+                        </label>
+                        <label for="inmuebleNomenclatura">Nomenclatura o número de unidad
+                            <input id="inmuebleNomenclatura" placeholder="Ej. 101" required>
+                        </label>
+                        <label for="inmuebleParqueadero">Parqueadero legado <small>(opcional)</small>
+                            <input id="inmuebleParqueadero" placeholder="Ej. P-101">
+                        </label>
+                        <label for="inmuebleCoeficiente">Coeficiente <small>(opcional)</small>
+                            <input id="inmuebleCoeficiente" type="number" step="0.0001" min="0"
+                                placeholder="Ej. 0.0150">
+                        </label>
+                        <label for="inmuebleMora">Mora inicial
+                            <input id="inmuebleMora" type="number" step="0.01" min="0" placeholder="Ej. 0" value="0">
+                        </label>
+                        <button class="btn btn-primary" type="submit">Guardar unidad</button>
+                    </form>
                 </div>
             </div>
             <div class="card table-responsive">
@@ -1028,41 +1060,92 @@
                         class="fa-solid fa-plus"></i> Nueva zona</button>
             </div>
 
-            <div id="modalZona" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
+            <section id="modalZona" class="zone-editor card hidden" aria-labelledby="tituloFormularioZona">
+                <header class="zone-editor-header">
                     <div>
-                        <h3 id="tituloFormularioZona">Configurar zona social</h3>
-                        <p style="color:var(--text-muted); font-size:14px; margin-top:4px;">Esta información se verá en
-                            la ficha pública de la zona.</p>
+                        <p class="section-kicker">Configuración administrativa</p>
+                        <h2 id="tituloFormularioZona">Configurar zona social</h2>
+                        <p>Define la información pública y las reglas que controlan cada reserva.</p>
                     </div>
-                    <button type="button" class="btn btn-ghost" style="width:auto" onclick="cerrarFormularioZona()"><i
-                            class="fa-solid fa-xmark"></i></button>
-                </div>
-                <form id="formCrearZona" style="display:flex; flex-direction:column; gap:16px; margin-top:16px;">
+                    <button type="button" class="btn btn-ghost zone-editor-close" onclick="cerrarFormularioZona()"
+                        aria-label="Cerrar editor de zona">Cerrar <i class="fa-solid fa-xmark"></i></button>
+                </header>
+                <form id="formCrearZona" class="zone-editor-form" enctype="multipart/form-data">
                     <input type="hidden" id="zonaId">
-                    <div class="zona-form-grid">
-                        <input type="text" id="zonaNombre" placeholder="Nombre (ej. Piscina, BBQ)" required>
-                        <input type="number" id="zonaAforo" placeholder="Aforo máximo" min="1" required>
-                        <input type="number" id="zonaTarifa" placeholder="Tarifa (0 si no aplica)" min="0" step="1000"
-                            required>
-                    </div>
-                    <input type="text" id="zonaHorarios" placeholder="Horarios permitidos (ej. 8:00 AM - 10:00 PM)"
-                        required>
-                    <textarea id="zonaDescripcion"
-                        placeholder="Descripción de la zona, sus características y qué incluye…" required
-                        rows="3"></textarea>
-                    <textarea id="zonaReglamento" placeholder="Normas y condiciones de uso…" required
-                        rows="4"></textarea>
-                    <input id="zonaImagen" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-                        aria-label="Imagen de zona JPG, PNG o WEBP máximo 5MB">
-                    <input id="zonaYoutube" type="url" placeholder="Video de YouTube opcional (https://youtu.be/…)">
-                    <div style="display:flex; gap:8px;">
-                        <button id="btnGuardarZona" type="submit" class="btn btn-primary">Guardar zona</button>
-                        <button type="button" class="btn btn-ghost" style="width:auto"
-                            onclick="cerrarFormularioZona()">Cancelar</button>
-                    </div>
+                    <fieldset class="zone-editor-section">
+                        <legend><i class="fa-solid fa-circle-info"></i> Información básica</legend>
+                        <p class="zone-editor-help">Estos datos se muestran a residentes y visitantes en la ficha de la
+                            zona.</p>
+                        <div class="zone-editor-grid zone-editor-grid-basic">
+                            <label class="zone-editor-field zone-editor-field-wide">Nombre de la zona <span>*</span>
+                                <input type="text" id="zonaNombre" placeholder="Ej. Piscina, salón comunal o BBQ"
+                                    required>
+                            </label>
+                            <label class="zone-editor-field">Aforo máximo <span>*</span>
+                                <input type="number" id="zonaAforo" min="1" placeholder="Ej. 30" required>
+                            </label>
+                            <label class="zone-editor-field">Tarifa de uso
+                                <input type="number" id="zonaTarifa" min="0" step="1000" placeholder="0 si no aplica"
+                                    required>
+                            </label>
+                            <label class="zone-editor-field zone-editor-field-full">Horario permitido <span>*</span>
+                                <input type="text" id="zonaHorarios" placeholder="Ej. 8:00 a. m. – 10:00 p. m."
+                                    required>
+                            </label>
+                        </div>
+                    </fieldset>
+                    <fieldset class="zone-editor-section zone-editor-policy">
+                        <legend><i class="fa-solid fa-calendar-check"></i> Política de reservas</legend>
+                        <p class="zone-editor-help">Los límites se aplican por zona y por apartamento o casa, no por
+                            persona.</p>
+                        <div class="zone-editor-grid">
+                            <label class="zone-editor-field">Máximo de horas por reserva <span>*</span>
+                                <input type="number" id="zonaMaxHorasReserva" min="1" max="24" value="1" required>
+                                <small>La franja solicitada no podrá superar este límite.</small>
+                            </label>
+                            <label class="zone-editor-field">Máximo de reservas al día por inmueble <span>*</span>
+                                <input type="number" id="zonaMaxReservasDiarias" min="1" max="20" value="1" required>
+                                <small>Cuenta solicitudes pendientes y reservas aprobadas.</small>
+                            </label>
+                        </div>
+                    </fieldset>
+                    <fieldset class="zone-editor-section">
+                        <legend><i class="fa-solid fa-eye"></i> Contenido visible</legend>
+                        <p class="zone-editor-help">Agrega una descripción clara, las condiciones de uso y contenido
+                            opcional.</p>
+                        <div class="zone-editor-grid">
+                            <label class="zone-editor-field zone-editor-field-full">Descripción <span>*</span>
+                                <textarea id="zonaDescripcion" placeholder="Qué ofrece la zona y qué incluye…" required
+                                    rows="3"></textarea>
+                            </label>
+                            <label class="zone-editor-field zone-editor-field-full">Normas y condiciones de uso
+                                <span>*</span>
+                                <textarea id="zonaReglamento"
+                                    placeholder="Condiciones, restricciones y responsabilidades…" required
+                                    rows="4"></textarea>
+                            </label>
+                            <label class="zone-editor-field">Imagen de la zona
+                                <input id="zonaImagen" type="file"
+                                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
+                                <small>JPG, PNG o WEBP · máximo 5 MB.</small>
+                            </label>
+                            <label class="zone-editor-field">Video de YouTube
+                                <input id="zonaYoutube" type="url" placeholder="https://youtu.be/…">
+                                <small>Opcional. Se muestra en la ficha pública.</small>
+                            </label>
+                        </div>
+                    </fieldset>
+                    <footer class="zone-editor-actions">
+                        <span><i class="fa-solid fa-asterisk"></i> Campos obligatorios</span>
+                        <div>
+                            <button type="button" class="btn btn-ghost"
+                                onclick="cerrarFormularioZona()">Cancelar</button>
+                            <button id="btnGuardarZona" type="submit" class="btn btn-primary"><i
+                                    class="fa-solid fa-floppy-disk"></i> Guardar zona</button>
+                        </div>
+                    </footer>
                 </form>
-            </div>
+            </section>
 
             <div id="panelReservarZona" class="card reserva-solicitud-card">
                 <div>
@@ -1070,10 +1153,25 @@
                     <p>Elige la zona y fecha. La administración confirmará tu solicitud.</p>
                 </div>
                 <form id="formReservarZona" class="reserva-solicitud-form">
-                    <select id="reservaZonaId" required>
-                        <option value="">Selecciona una zona…</option>
-                    </select>
-                    <input id="reservaFecha" type="date" required>
+                    <label>Zona social
+                        <select id="reservaZonaId" required>
+                            <option value="">Selecciona una zona…</option>
+                        </select>
+                    </label>
+                    <label>Apartamento o casa
+                        <select id="reservaInmuebleId" required>
+                            <option value="">Selecciona tu inmueble…</option>
+                        </select>
+                    </label>
+                    <label>Fecha
+                        <input id="reservaFecha" type="date" required>
+                    </label>
+                    <label>Hora de inicio
+                        <input id="reservaHoraInicio" type="time" required>
+                    </label>
+                    <label>Hora de finalización
+                        <input id="reservaHoraFin" type="time" required>
+                    </label>
                     <button type="submit" class="btn btn-primary">Solicitar reserva</button>
                 </form>
             </div>
@@ -1091,13 +1189,14 @@
                             <th>Zona</th>
                             <th>Aforo</th>
                             <th>Horario</th>
+                            <th>Política de reserva</th>
                             <th>Tarifa</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="tb-zonas-config">
                         <tr>
-                            <td colspan="5">Cargando zonas…</td>
+                            <td colspan="6">Cargando zonas…</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1114,15 +1213,16 @@
                     <thead>
                         <tr>
                             <th>Zona</th>
-                            <th>Residente</th>
+                            <th>Apartamento o casa</th>
                             <th>Fecha</th>
+                            <th>Horario</th>
                             <th>Estado</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="tb-zonas">
                         <tr>
-                            <td colspan="5">Cargando…</td>
+                            <td colspan="6">Cargando…</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1206,7 +1306,7 @@
     </template>
 
     <!-- Script Principal -->
-    <script src="js/app.js?v=20260803"></script>
+    <script src="js/app.js?v=20260815"></script>
 </body>
 
 </html>

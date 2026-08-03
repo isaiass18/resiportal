@@ -21,7 +21,7 @@ if ($action === 'list_visitantes') {
     responseJSON('success', '', $stmt->fetchAll());
 }
 if ($action === 'list_minuta') {
-    $stmt = $pdo->prepare('SELECT m.*, u.nombre AS vigilante FROM minuta_porteria m JOIN usuarios u ON u.id = m.vigilante_id WHERE u.conjunto_id = ? ORDER BY m.fecha_registro DESC LIMIT 50');
+    $stmt = $pdo->prepare('SELECT m.*, u.nombre AS vigilante, COALESCE(m.fecha_novedad, m.fecha_registro) AS fecha_operativa FROM minuta_porteria m JOIN usuarios u ON u.id = m.vigilante_id WHERE u.conjunto_id = ? ORDER BY COALESCE(m.fecha_novedad, m.fecha_registro) DESC LIMIT 50');
     $stmt->execute([$conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
 }
@@ -31,7 +31,7 @@ if ($action === 'list_paquetes') {
     responseJSON('success', '', $stmt->fetchAll());
 }
 if ($action === 'list_directorio') {
-    $stmt = $pdo->prepare("SELECT u.id, u.nombre, u.email, COALESCE(i.torre, 'N/A') AS torre, COALESCE(i.apartamento, i.nomenclatura, 'N/A') AS apartamento FROM usuarios u LEFT JOIN relacion_inmuebles_usuarios r ON r.usuario_id = u.id LEFT JOIN inmuebles i ON i.id = r.inmueble_id WHERE u.rol IN ('residente', 'propietario') AND u.conjunto_id = ? ORDER BY apartamento, u.nombre");
+    $stmt = $pdo->prepare("SELECT DISTINCT u.id, u.nombre, u.email, COALESCE(i.torre, 'N/A') AS torre, COALESCE(i.apartamento, i.nomenclatura, 'N/A') AS apartamento FROM usuarios u LEFT JOIN relacion_inmuebles_usuarios r ON r.usuario_id = u.id LEFT JOIN inmuebles i ON i.id = r.inmueble_id WHERE u.rol IN ('residente', 'propietario') AND u.conjunto_id = ? ORDER BY apartamento, u.nombre");
     $stmt->execute([$conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
 }
@@ -72,9 +72,11 @@ if ($action === 'entregar_paquete') {
 if ($action === 'registrar_novedad') {
     $asunto = trim($_POST['asunto'] ?? '');
     $novedad = trim($_POST['novedad'] ?? '');
-    if ($asunto === '' || $novedad === '') responseJSON('error', 'Asunto y novedad son obligatorios');
-    $stmt = $pdo->prepare('INSERT INTO minuta_porteria (vigilante_id, asunto, novedad) VALUES (?, ?, ?)');
-    $stmt->execute([$userId, $asunto, $novedad]);
+    $fechaNovedad = trim($_POST['fecha_novedad'] ?? '');
+    $fecha = DateTime::createFromFormat('Y-m-d\\TH:i', $fechaNovedad);
+    if ($asunto === '' || strlen($asunto) > 150 || $novedad === '' || !$fecha || $fecha->format('Y-m-d\\TH:i') !== $fechaNovedad) responseJSON('error', 'Asunto (máximo 150 caracteres), novedad y fecha/hora válidos son obligatorios');
+    $stmt = $pdo->prepare('INSERT INTO minuta_porteria (vigilante_id, asunto, novedad, fecha_novedad) VALUES (?, ?, ?, ?)');
+    $stmt->execute([$userId, $asunto, $novedad, $fecha->format('Y-m-d H:i:s')]);
     responseJSON('success', 'Novedad registrada en minuta');
 }
 if ($action === 'list_inmuebles') {

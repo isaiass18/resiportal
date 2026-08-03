@@ -50,6 +50,13 @@ function formatDate(value) {
     });
 }
 
+function formatDateTime(value) {
+    if (!value) return 'Sin fecha';
+    return new Date(value.replace(' ', 'T')).toLocaleString('es-CO', {
+        day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+}
+
 async function checkAuth() {
     try {
         const res = await fetch('api/auth.php?action=check');
@@ -1314,3 +1321,1208 @@ window.abrirFormularioPQRS = function () { let modal = document.getElementById('
 loadReclamaciones = async function () { const r = await fetch('api/reclamaciones.php?action=list'); const d = await r.json(); const body = document.getElementById('tb-reclamaciones'); if (d.status === 'success') body.innerHTML = d.data.length ? d.data.map(item => `<tr><td><strong>${escapeHtml(item.asunto)}</strong><br><small>${escapeHtml(item.categoria || 'General')}</small></td><td>${escapeHtml(item.usuario_nombre || 'Tú')}</td><td>${escapeHtml(item.creado_en)}</td><td><span class="reserva-estado">${escapeHtml(item.estado)}</span></td></tr>`).join('') : '<tr><td colspan="4">No hay PQRS radicadas.</td></tr>'; };
 
 document.addEventListener('submit', async event => { const form = event.target; if (form.id === 'formCrearUsuario') { event.preventDefault(); const fd = new FormData(); fd.append('action', document.getElementById('usrId').value ? 'update' : 'crear_usuario');['usrId', 'usrDoc', 'usrNombre', 'usrEmail', 'usrPass', 'usrRol'].forEach(id => fd.append({ usrId: 'id', usrDoc: 'documento', usrNombre: 'nombre', usrEmail: 'email', usrPass: 'password', usrRol: 'rol' }[id], document.getElementById(id).value)); const r = await fetch('api/users.php', { method: 'POST', body: fd }); const d = await r.json(); alert(d.message); if (d.status === 'success') { document.getElementById('modalUsuario').classList.add('hidden'); loadUsuarios(); } } if (form.id === 'formPorteria') { event.preventDefault(); const r = await fetch('api/porteria.php', { method: 'POST', body: new FormData(form) }); const d = await r.json(); alert(d.message); if (d.status === 'success') { document.getElementById('modalPorteria').classList.add('hidden'); loadPorteria(); } } if (form.id === 'formPQRS') { event.preventDefault(); const fd = new FormData(form); fd.append('action', 'crear'); const r = await fetch('api/reclamaciones.php', { method: 'POST', body: fd }); const d = await r.json(); alert(d.message); if (d.status === 'success') { document.getElementById('modalPQRS').classList.add('hidden'); loadReclamaciones(); } } if (form.id === 'formNuevoVehiculo' || form.id === 'formNuevaMascota') { event.preventDefault(); const fd = new FormData(form); fd.append('action', form.id === 'formNuevoVehiculo' ? 'add_vehiculo' : 'add_mascota'); const r = await fetch('api/inmuebles.php', { method: 'POST', body: fd }); const d = await r.json(); alert(d.message); if (d.status === 'success') { form.reset(); form.classList.add('hidden'); loadHomeResidente(); } } });
+
+
+// Mejoras de experiencia para estado de cuenta, disponibilidad de zonas y PQRS.
+let estadoCuentaResidente = { cuenta: null, historial: [] };
+
+function prepararResumenCuenta() {
+    const deuda = document.getElementById('txtDeudaResidente');
+    const card = deuda?.closest('.card');
+    if (!card) return;
+
+    card.classList.add('account-summary-card');
+    card.querySelector('h3')?.classList.add('account-summary-title');
+    document.getElementById('tb-mis-pagos')?.closest('.card')?.setAttribute('id', 'historial-pagos');
+
+    if (!card.querySelector('.account-summary-actions')) {
+        card.insertAdjacentHTML('beforeend', `
+            <div class="account-summary-actions">
+                <button type="button" class="account-summary-action" onclick="window.verHistorialPagos()">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Ver movimientos
+                </button>
+                <button type="button" class="account-summary-action" onclick="window.descargarEstadoCuenta()">
+                    <i class="fa-solid fa-file-arrow-down"></i> Descargar resumen
+                </button>
+            </div>
+        `);
+    }
+}
+
+window.verHistorialPagos = function () {
+    document.getElementById('historial-pagos')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+window.descargarEstadoCuenta = function () {
+    const { cuenta, historial } = estadoCuentaResidente;
+    if (!cuenta) {
+        alert('Aún no se pudo cargar el estado de cuenta. Inténtalo de nuevo.');
+        return;
+    }
+
+    const unidad = [cuenta.torre, cuenta.nomenclatura || cuenta.apartamento].filter(Boolean).join(' · ');
+    const celdaCsv = value => {
+        const text = String(value ?? '').replace(/"/g, '""');
+        return `"${/^[=+\-@]/.test(text) ? `'${text}` : text}"`;
+    };
+    const filas = [
+        ['Estado de cuenta ResiPortal'],
+        ['Inmueble', unidad || 'Sin inmueble asignado'],
+        ['Deuda actual', Number(cuenta.mora_actual || 0).toFixed(2)],
+        [],
+        ['Fecha', 'Valor', 'Método', 'Referencia', 'Descripción', 'Estado']
+    ];
+    historial.forEach(pago => filas.push([
+        pago.fecha_pago,
+        Number(pago.valor || 0).toFixed(2),
+        pago.metodo_pago,
+        pago.referencia,
+        pago.descripcion,
+        pago.estado
+    ]));
+
+    const csv = filas.map(fila => fila.map(celdaCsv).join(';')).join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const enlace = document.createElement('a');
+    enlace.href = URL.createObjectURL(blob);
+    enlace.download = 'estado-de-cuenta-resiportal.csv';
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+    URL.revokeObjectURL(enlace.href);
+};
+
+loadMisPagos = async function () {
+    try {
+        const response = await fetch('api/finanzas.php?action=mis_pagos');
+        const result = await response.json();
+        if (result.status !== 'success') {
+            alert(result.message || 'No fue posible cargar los pagos.');
+            return;
+        }
+
+        const cuenta = result.data.cuenta;
+        const historial = result.data.historial || [];
+        estadoCuentaResidente = { cuenta, historial };
+        prepararResumenCuenta();
+
+        if (cuenta) {
+            document.getElementById('txtDeudaResidente').textContent = formatCurrency(cuenta.mora_actual);
+            const unidad = [cuenta.torre, cuenta.nomenclatura || cuenta.apartamento].filter(Boolean).join(' · ');
+            document.getElementById('txtInmuebleResidente').innerHTML = `<i class="fa-solid fa-building"></i> ${escapeHtml(unidad || 'Inmueble asignado')}`;
+        }
+
+        const tbody = document.getElementById('tb-mis-pagos');
+        if (tbody) {
+            tbody.innerHTML = historial.length === 0
+                ? '<tr><td colspan="6">No has reportado pagos todavía.</td></tr>'
+                : historial.map(pago => {
+                    const estado = pago.estado === 'aprobado' ? 'Aprobado' : pago.estado === 'rechazado' ? 'Rechazado' : 'Pendiente';
+                    const clase = pago.estado === 'aprobado' ? 'estado-aprobada' : pago.estado === 'rechazado' ? 'estado-rechazada' : 'estado-pendiente';
+                    const soporte = pago.soporte_archivo
+                        ? `<a class="payment-support-link" href="api/finanzas.php?action=ver_soporte&pago_id=${Number(pago.id)}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip"></i> Ver soporte</a>`
+                        : '—';
+                    return `<tr>
+                        <td>${formatDate(pago.fecha_pago)}</td>
+                        <td>${formatCurrency(pago.valor)}</td>
+                        <td>${escapeHtml(pago.metodo_pago)}</td>
+                        <td><strong>${escapeHtml(pago.referencia || 'Sin referencia')}</strong><br><small>${escapeHtml(pago.descripcion || 'Sin descripción')}</small></td>
+                        <td>${soporte}</td>
+                        <td><span class="reserva-estado ${clase}">${estado}</span></td>
+                    </tr>`;
+                }).join('');
+        }
+
+        const form = document.getElementById('formReportarPago');
+        if (form) {
+            form.onsubmit = async event => {
+                event.preventDefault();
+                const data = new FormData();
+                data.append('action', 'reportar_pago');
+                data.append('valor', document.getElementById('repPagoValor').value);
+                data.append('referencia', document.getElementById('repPagoRef').value);
+                data.append('descripcion', document.getElementById('repPagoDescripcion').value);
+                data.append('metodo', document.getElementById('repPagoMetodo').value);
+                const soporte = document.getElementById('repPagoSoporte').files[0];
+                if (soporte) data.append('soporte', soporte);
+
+                const pagoResponse = await fetch('api/finanzas.php', { method: 'POST', body: data });
+                const pagoResult = await pagoResponse.json();
+                alert(pagoResult.message);
+                if (pagoResult.status === 'success') {
+                    form.reset();
+                    loadMisPagos();
+                }
+            };
+        }
+    } catch (error) {
+        console.error('Error cargando pagos', error);
+        alert('No fue posible cargar el estado de cuenta. Inténtalo nuevamente.');
+    }
+};
+
+const cargarZonasConDisponibilidad = loadZonas;
+loadZonas = async function () {
+    await cargarZonasConDisponibilidad();
+
+    const esAdmin = currentUser?.rol === 'admin';
+    const select = document.getElementById('reservaZonaId');
+    const calendarioPersonal = document.getElementById('calendar');
+    let calendario = document.getElementById('calendar-disponibilidad-residente');
+    if (!select || !calendarioPersonal || !calendario) return;
+
+    let panel = document.getElementById('resident-availability-panel');
+    if (!panel) {
+        panel = document.createElement('section');
+        panel.id = 'resident-availability-panel';
+        panel.className = 'resident-availability-panel';
+        panel.innerHTML = `
+            <div class="resident-availability-header">
+                <div>
+                    <p class="resident-availability-kicker">Reserva por calendario</p>
+                    <h3 id="resident-availability-title">Disponibilidad de la zona</h3>
+                    <p>Verde: libre y reservable. Naranja: solicitud pendiente. Rojo: reservado.</p>
+                </div>
+                <div class="zona-availability-legends" aria-label="Estados de disponibilidad">
+                    <span class="zona-availability-legend is-available"><i></i> Disponible</span>
+                    <span class="zona-availability-legend is-pending"><i></i> Pendiente</span>
+                    <span class="zona-availability-legend is-reserved"><i></i> Reservado</span>
+                </div>
+            </div>
+        `;
+        calendarioPersonal.closest('.card').insertAdjacentElement('beforebegin', panel);
+        panel.appendChild(calendario);
+    }
+    panel.classList.toggle('hidden', esAdmin);
+    if (esAdmin) return;
+
+    if (!select.value && select.options.length > 1) select.selectedIndex = 1;
+    if (!select.value || !window.FullCalendar) return;
+
+    const renderDisponibilidad = async () => {
+        const response = await fetch(`api/zonas.php?action=zona_disponibilidad&zona_id=${encodeURIComponent(select.value)}`);
+        const result = await response.json();
+        if (result.status !== 'success') {
+            calendario.innerHTML = `<p class="muted">${escapeHtml(result.message || 'No fue posible cargar la disponibilidad.')}</p>`;
+            return;
+        }
+
+        const reservas = result.data.reservas || [];
+        const estados = new Map(reservas.map(item => [item.fecha_reserva, item.estado]));
+        const hoy = fechaLocal(new Date());
+        const titulo = document.getElementById('resident-availability-title');
+        if (titulo) titulo.textContent = `Disponibilidad: ${result.data.zona.nombre}`;
+        if (window.residentAvailabilityCalendar) window.residentAvailabilityCalendar.destroy();
+
+        window.residentAvailabilityCalendar = new FullCalendar.Calendar(calendario, {
+            initialView: 'dayGridMonth',
+            locale: 'es',
+            height: 'auto',
+            headerToolbar: { left: 'prev,next today', center: 'title', right: '' },
+            dayCellClassNames: info => {
+                if (info.isOther) return [];
+                const fecha = fechaLocal(info.date);
+                return [estados.has(fecha) ? estadoReservaClase(estados.get(fecha)) : (fecha <= hoy ? 'zona-dia-pasado' : 'zona-dia-disponible')];
+            },
+            dayCellDidMount: info => {
+                if (info.isOther) return;
+                const fecha = fechaLocal(info.date);
+                const estado = estados.get(fecha);
+                info.el.setAttribute('aria-label', estado === 'aprobada' ? `${fecha}: reservado` : estado === 'pendiente' ? `${fecha}: solicitud pendiente` : fecha <= hoy ? `${fecha}: fecha no disponible` : `${fecha}: disponible para reservar`);
+            },
+            events: reservas.map(item => ({
+                title: item.estado === 'aprobada' ? 'Reservado' : 'Solicitud pendiente',
+                start: item.fecha_reserva,
+                allDay: true,
+                classNames: [item.estado === 'aprobada' ? 'zona-calendar-reserva' : 'zona-calendar-pendiente']
+            })),
+            dateClick: async info => {
+                const fecha = info.dateStr;
+                if (fecha <= hoy || estados.has(fecha)) return;
+                if (!confirm(`¿Solicitar reserva para el ${formatDate(fecha)}?`)) return;
+                const data = new FormData();
+                data.append('action', 'crear_reserva');
+                data.append('zona_id', select.value);
+                data.append('fecha_reserva', fecha);
+                const reservaResponse = await fetch('api/zonas.php', { method: 'POST', body: data });
+                const reservaResult = await reservaResponse.json();
+                alert(reservaResult.message);
+                if (reservaResult.status === 'success') loadZonas();
+            }
+        });
+        window.residentAvailabilityCalendar.render();
+    };
+
+    select.onchange = renderDisponibilidad;
+    await renderDisponibilidad();
+};
+
+window.cerrarFormularioPQRS = function () {
+    document.getElementById('modalPQRS')?.classList.add('hidden');
+};
+
+window.abrirFormularioPQRS = function () {
+    let modal = document.getElementById('modalPQRS');
+    if (!modal) {
+        document.getElementById('view-container').insertAdjacentHTML('beforeend', '<div id="modalPQRS" class="login-modal pqrs-modal hidden"></div>');
+        modal = document.getElementById('modalPQRS');
+    }
+
+    modal.className = 'login-modal pqrs-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'pqrs-modal-title');
+    modal.innerHTML = `
+        <div class="login-box pqrs-dialog">
+            <button class="close-btn" type="button" onclick="window.cerrarFormularioPQRS()" aria-label="Cerrar formulario"><i class="fa-solid fa-xmark"></i></button>
+            <div class="pqrs-modal-heading">
+                <span class="pqrs-modal-icon"><i class="fa-regular fa-message"></i></span>
+                <div>
+                    <p>Atención al residente</p>
+                    <h2 id="pqrs-modal-title">Radicar PQRS</h2>
+                    <span>Cuéntanos tu solicitud; quedará registrada para que administración pueda gestionarla.</span>
+                </div>
+            </div>
+            <form id="formPQRS" class="pqrs-form">
+                <label>Tipo de solicitud
+                    <select name="categoria" required>
+                        <option value="Queja">Queja</option>
+                        <option value="Petición">Petición</option>
+                        <option value="Reclamo">Reclamo</option>
+                        <option value="Sugerencia">Sugerencia</option>
+                        <option value="General">General</option>
+                    </select>
+                </label>
+                <label>Asunto
+                    <input name="asunto" maxlength="150" placeholder="Resume tu solicitud" required>
+                </label>
+                <label>Descripción
+                    <textarea name="descripcion" rows="8" placeholder="Incluye los detalles necesarios para atender tu caso…" required></textarea>
+                </label>
+                <p class="pqrs-form-note"><i class="fa-solid fa-circle-info"></i> Recibirás el radicado con estado abierto en tu listado de PQRS.</p>
+                <button class="btn btn-primary pqrs-submit" type="submit"><i class="fa-solid fa-paper-plane"></i> Radicar solicitud</button>
+            </form>
+        </div>
+    `;
+    modal.querySelector('[name="asunto"]')?.focus();
+};
+
+
+// Cuotas diferenciadas por bloque/inmueble y administración de vigilantes.
+let vigilantesActuales = [];
+
+const cargarVistaResiPortalBase = loadView;
+loadView = function (viewName) {
+    if (viewName !== 'vigilantes') {
+        cargarVistaResiPortalBase(viewName);
+        return;
+    }
+    const container = document.getElementById('view-container');
+    container.innerHTML = `
+        <div class="view vigilantes-view">
+            <div class="section-toolbar">
+                <div>
+                    <p class="section-kicker">Administración · Seguridad</p>
+                    <h1 class="page-title">Vigilantes</h1>
+                    <p class="muted">Crea y administra las fichas operativas del personal de portería.</p>
+                </div>
+                <button class="btn btn-primary" type="button" onclick="window.abrirModalVigilante()"><i class="fa-solid fa-user-plus"></i> Nuevo vigilante</button>
+            </div>
+            <div id="vigilantes-grid" class="vigilantes-grid" aria-live="polite"><p class="muted">Cargando vigilantes…</p></div>
+        </div>
+    `;
+    loadVigilantes();
+};
+
+async function loadVigilantes() {
+    const grid = document.getElementById('vigilantes-grid');
+    if (!grid) return;
+    try {
+        const response = await fetch('api/users.php?action=list_vigilantes');
+        const result = await response.json();
+        if (result.status !== 'success') throw new Error(result.message);
+        vigilantesActuales = result.data || [];
+        grid.innerHTML = vigilantesActuales.length ? vigilantesActuales.map(vigilante => {
+            const nombre = escapeHtml(vigilante.nombre);
+            const iniciales = nombre.split(/\s+/).map(parte => parte[0]).join('').slice(0, 2).toUpperCase();
+            const foto = Number(vigilante.tiene_foto) ? `<img src="api/users.php?action=ver_foto_vigilante&vigilante_id=${Number(vigilante.id)}" alt="Foto de ${nombre}">` : `<span>${iniciales || 'VG'}</span>`;
+            return `<article class="vigilante-card">
+                <div class="vigilante-photo">${foto}</div>
+                <div class="vigilante-card-body">
+                    <h3>${nombre}</h3>
+                    <p class="vigilante-documento"><i class="fa-regular fa-id-card"></i> ${escapeHtml(vigilante.documento)}</p>
+                    <dl>
+                        <div><dt>Teléfono</dt><dd>${escapeHtml(vigilante.contacto || 'No registrado')}</dd></div>
+                        <div><dt>Turno</dt><dd>${escapeHtml(vigilante.turno || 'Sin definir')}</dd></div>
+                        <div><dt>Horario</dt><dd>${escapeHtml(vigilante.horario || 'Sin definir')}</dd></div>
+                    </dl>
+                    ${vigilante.observaciones ? `<p class="vigilante-notas">${escapeHtml(vigilante.observaciones)}</p>` : ''}
+                    <button class="btn btn-ghost vigilante-edit" type="button" onclick="window.abrirModalVigilante(${Number(vigilante.id)})"><i class="fa-solid fa-pen"></i> Editar ficha</button>
+                </div>
+            </article>`;
+        }).join('') : `<div class="empty-state"><i class="fa-solid fa-shield-halved"></i><h3>Aún no hay vigilantes registrados</h3><p>Crea la primera ficha de vigilancia para asignar sus datos y horario.</p><button class="btn btn-primary" type="button" onclick="window.abrirModalVigilante()">Crear vigilante</button></div>`;
+    } catch (error) {
+        console.error('Error cargando vigilantes', error);
+        grid.innerHTML = '<p class="muted">No fue posible cargar los vigilantes.</p>';
+    }
+}
+
+window.abrirModalVigilante = function (id = 0) {
+    const vigilante = vigilantesActuales.find(item => Number(item.id) === Number(id)) || {};
+    let modal = document.getElementById('modalVigilante');
+    if (!modal) {
+        document.body.insertAdjacentHTML('beforeend', '<div id="modalVigilante" class="login-modal vigilante-modal hidden"></div>');
+        modal = document.getElementById('modalVigilante');
+    }
+    modal.className = 'login-modal vigilante-modal';
+    modal.innerHTML = `
+        <div class="login-box vigilante-dialog">
+            <button class="close-btn" type="button" onclick="document.getElementById('modalVigilante').classList.add('hidden')" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+            <div class="vigilante-modal-heading"><span><i class="fa-solid fa-shield-halved"></i></span><div><p>Personal de portería</p><h2>${id ? 'Editar vigilante' : 'Crear vigilante'}</h2><small>La foto es opcional y se almacena de forma privada.</small></div></div>
+            <form id="formVigilante" class="vigilante-form" enctype="multipart/form-data">
+                <input type="hidden" name="id" value="${Number(id) || ''}">
+                <label>Nombre completo<input name="nombre" maxlength="150" value="${escapeHtml(vigilante.nombre || '')}" required></label>
+                <label>Documento<input name="documento" maxlength="50" value="${escapeHtml(vigilante.documento || '')}" required></label>
+                <label>Correo electrónico<input type="email" name="email" maxlength="150" value="${escapeHtml(vigilante.email || '')}" required></label>
+                <label>Teléfono<input name="telefono" maxlength="50" value="${escapeHtml(vigilante.contacto || '')}" placeholder="Opcional"></label>
+                <label>Contraseña ${id ? '<small>(dejar vacía para mantenerla)</small>' : ''}<input type="password" name="password" minlength="8" ${id ? '' : 'required'} placeholder="Mínimo 8 caracteres"></label>
+                <label>Turno<select name="turno"><option value="">Sin definir</option>${['Diurno', 'Nocturno', 'Rotativo', 'Otro'].map(turno => `<option value="${turno}" ${vigilante.turno === turno ? 'selected' : ''}>${turno}</option>`).join('')}</select></label>
+                <label>Horario<input name="horario" maxlength="150" value="${escapeHtml(vigilante.horario || '')}" placeholder="Ej. Lun–Vie, 06:00–14:00"></label>
+                <label class="vigilante-full-field">Foto opcional<input type="file" name="foto" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"><small>JPG, PNG o WEBP, máximo 3 MB.</small></label>
+                <label class="vigilante-full-field">Observaciones<textarea name="observaciones" maxlength="1000" rows="4" placeholder="Información operativa opcional">${escapeHtml(vigilante.observaciones || '')}</textarea></label>
+                <button class="btn btn-primary vigilante-full-field" type="submit"><i class="fa-solid fa-floppy-disk"></i> Guardar vigilante</button>
+            </form>
+        </div>
+    `;
+    modal.querySelector('[name="nombre"]')?.focus();
+};
+
+document.addEventListener('submit', async event => {
+    if (event.target.id !== 'formVigilante') return;
+    event.preventDefault();
+    const response = await fetch('api/users.php', { method: 'POST', body: new FormData(event.target) });
+    const result = await response.json();
+    alert(result.message);
+    if (result.status === 'success') {
+        document.getElementById('modalVigilante').classList.add('hidden');
+        loadVigilantes();
+    }
+});
+
+const cargarFinanzasConfiguracionBase = loadFinanzas;
+loadFinanzas = async function () {
+    await cargarFinanzasConfiguracionBase();
+    const modal = document.getElementById('modalCobro');
+    if (!modal) return;
+
+    const periodoActual = new Date();
+    const periodo = `${periodoActual.getFullYear()}-${String(periodoActual.getMonth() + 1).padStart(2, '0')}`;
+    modal.innerHTML = `
+        <div class="login-box cuota-periodo-dialog">
+            <button class="close-btn" type="button" onclick="document.getElementById('modalCobro').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button>
+            <h2>Generar cuotas configuradas</h2>
+            <p>Solo se cobrarán los valores previamente asignados a cada apartamento. El período no se duplica.</p>
+            <form id="formGenerarCobro" class="stack-form">
+                <label>Período<input id="cobroPeriodo" type="month" value="${periodo}" required></label>
+                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-file-invoice-dollar"></i> Generar cuotas del período</button>
+            </form>
+        </div>`;
+
+    document.getElementById('panel-cuotas-configuradas')?.remove();
+    modal.insertAdjacentHTML('afterend', `
+        <section id="panel-cuotas-configuradas" class="card cuotas-configuradas-card">
+            <div class="section-toolbar"><div><p class="section-kicker">Configuración de administración</p><h3>Cuotas por apartamentos seleccionados</h3><p class="muted">Busca, filtra y selecciona unidades. La selección se conserva al cambiar de página.</p></div></div>
+            <div class="cuota-selector-summary" aria-live="polite"><span><strong id="cuotaTotalInmuebles">—</strong> unidades registradas</span><span><strong id="cuotaTotalConfiguradas">—</strong> con cuota configurada</span></div>
+            <form id="formCuotaApartamentos" class="cuota-config-form">
+                <div class="cuota-selector-heading"><div><h4><i class="fa-solid fa-building"></i> Seleccionar apartamentos o casas</h4><p>Se muestran hasta 50 resultados por página para mantener la búsqueda rápida.</p></div><button id="btnLimpiarSeleccionCuotas" class="btn btn-ghost" type="button">Limpiar selección</button></div>
+                <div class="cuota-selector-filters">
+                    <label>Buscar unidad<input id="cuotaBusqueda" type="search" autocomplete="off" placeholder="Torre, apartamento o nomenclatura"></label>
+                    <label>Torre o bloque<select id="cuotaBloque"><option value="">Todas las torres</option></select></label>
+                    <label>Estado de cuota<select id="cuotaEstado"><option value="todas">Todas</option><option value="sin_configurar">Sin cuota</option><option value="configurada">Con cuota</option></select></label>
+                </div>
+                <div class="cuota-selector-results" aria-live="polite"><span id="cuotaResultadosTexto">Cargando unidades…</span><span id="cuotaSeleccionTexto" class="cuota-selection-count">0 seleccionadas</span></div>
+                <div class="cuota-selector-table-wrap"><table class="data-table cuota-selector-table"><thead><tr><th><label class="cuota-select-page" title="Seleccionar resultados de esta página"><input id="cuotaSeleccionarPagina" type="checkbox"><span>Esta página</span></label></th><th>Unidad</th><th>Torre / bloque</th><th>Cuota actual</th></tr></thead><tbody id="cuotaInmueblesResultados"><tr><td colspan="4">Cargando…</td></tr></tbody></table></div>
+                <div class="cuota-selector-pagination"><button id="cuotaPaginaAnterior" class="btn btn-ghost" type="button"><i class="fa-solid fa-chevron-left"></i> Anterior</button><span id="cuotaPaginacionTexto">Página —</span><button id="cuotaPaginaSiguiente" class="btn btn-ghost" type="button">Siguiente <i class="fa-solid fa-chevron-right"></i></button></div>
+                <div class="cuota-apply-bar"><label for="cuotaValorApartamentos">Valor mensual de administración<input id="cuotaValorApartamentos" type="number" min="1" step="1" placeholder="Ej. 150000" required></label><button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Aplicar a unidades seleccionadas</button></div>
+            </form>
+        </section>`);
+
+    const panel = document.getElementById('panel-cuotas-configuradas');
+    const seleccionados = new Set();
+    const estado = { page: 1, perPage: 50, q: '', bloque: '', estadoCuota: 'todas', paginaActual: [], totalPages: 1 };
+    let temporizadorBusqueda;
+
+    const actualizarSeleccion = () => {
+        const seleccionadosEnPagina = estado.paginaActual.filter(inmueble => seleccionados.has(String(inmueble.id))).length;
+        const seleccionarPagina = panel.querySelector('#cuotaSeleccionarPagina');
+        if (seleccionarPagina) {
+            seleccionarPagina.checked = estado.paginaActual.length > 0 && seleccionadosEnPagina === estado.paginaActual.length;
+            seleccionarPagina.indeterminate = seleccionadosEnPagina > 0 && seleccionadosEnPagina < estado.paginaActual.length;
+        }
+        panel.querySelector('#cuotaSeleccionTexto').textContent = `${seleccionados.size} ${seleccionados.size === 1 ? 'unidad seleccionada' : 'unidades seleccionadas'}`;
+        panel.querySelector('#btnLimpiarSeleccionCuotas').disabled = seleccionados.size === 0;
+    };
+
+    const cargarPagina = async () => {
+        const parametros = new URLSearchParams({ page: String(estado.page), per_page: String(estado.perPage), estado_cuota: estado.estadoCuota });
+        if (estado.q) parametros.set('q', estado.q);
+        if (estado.bloque) parametros.set('bloque', estado.bloque);
+        const cuerpo = panel.querySelector('#cuotaInmueblesResultados');
+        cuerpo.innerHTML = '<tr><td colspan="4">Cargando unidades…</td></tr>';
+        try {
+            const response = await fetch(`api/finanzas.php?action=cuotas_configuradas&${parametros.toString()}`);
+            const result = await response.json();
+            if (result.status !== 'success') throw new Error(result.message);
+            const { inmuebles = [], pagination, filters, summary } = result.data;
+            estado.page = pagination.page;
+            estado.totalPages = pagination.total_pages;
+            estado.paginaActual = inmuebles;
+            panel.querySelector('#cuotaTotalInmuebles').textContent = summary.total;
+            panel.querySelector('#cuotaTotalConfiguradas').textContent = summary.configuradas;
+            const bloqueSelect = panel.querySelector('#cuotaBloque');
+            const bloqueActual = estado.bloque;
+            bloqueSelect.innerHTML = '<option value="">Todas las torres</option>' + (filters.bloques || []).map(bloque => `<option value="${escapeHtml(bloque)}">${escapeHtml(bloque)}</option>`).join('');
+            bloqueSelect.value = bloqueActual;
+            panel.querySelector('#cuotaResultadosTexto').textContent = pagination.total ? `Mostrando ${((pagination.page - 1) * pagination.per_page) + 1}–${Math.min(pagination.page * pagination.per_page, pagination.total)} de ${pagination.total} unidades` : 'No hay unidades que coincidan con los filtros.';
+            cuerpo.innerHTML = inmuebles.length ? inmuebles.map(inmueble => {
+                const id = String(inmueble.id);
+                const cuota = Number(inmueble.cuota_administracion) > 0 ? formatCurrency(inmueble.cuota_administracion) : '<span class="cuota-empty">Sin configurar</span>';
+                return `<tr><td><input class="cuota-unidad-check" type="checkbox" value="${Number(inmueble.id)}" aria-label="Seleccionar ${escapeHtml(inmueble.nomenclatura || inmueble.apartamento)}" ${seleccionados.has(id) ? 'checked' : ''}></td><td><strong>${escapeHtml(inmueble.nomenclatura || inmueble.apartamento || 'Sin nomenclatura')}</strong></td><td>${escapeHtml(inmueble.bloque)}</td><td>${cuota}</td></tr>`;
+            }).join('') : '<tr><td colspan="4" class="empty-state">No hay unidades para los filtros seleccionados.</td></tr>';
+            panel.querySelector('#cuotaPaginacionTexto').textContent = `Página ${pagination.page} de ${pagination.total_pages}`;
+            panel.querySelector('#cuotaPaginaAnterior').disabled = pagination.page <= 1;
+            panel.querySelector('#cuotaPaginaSiguiente').disabled = pagination.page >= pagination.total_pages;
+            actualizarSeleccion();
+        } catch (error) {
+            console.error('Error cargando unidades para cuota', error);
+            cuerpo.innerHTML = `<tr><td colspan="4" class="empty-state">${escapeHtml(error.message || 'No fue posible cargar las unidades.')}</td></tr>`;
+        }
+    };
+
+    panel.addEventListener('change', event => {
+        if (event.target.classList.contains('cuota-unidad-check')) {
+            const id = event.target.value;
+            event.target.checked ? seleccionados.add(id) : seleccionados.delete(id);
+            actualizarSeleccion();
+        }
+        if (event.target.id === 'cuotaSeleccionarPagina') {
+            estado.paginaActual.forEach(inmueble => event.target.checked ? seleccionados.add(String(inmueble.id)) : seleccionados.delete(String(inmueble.id)));
+            panel.querySelectorAll('.cuota-unidad-check').forEach(check => { check.checked = event.target.checked; });
+            actualizarSeleccion();
+        }
+        if (event.target.id === 'cuotaBloque' || event.target.id === 'cuotaEstado') {
+            estado.bloque = panel.querySelector('#cuotaBloque').value;
+            estado.estadoCuota = panel.querySelector('#cuotaEstado').value;
+            estado.page = 1;
+            cargarPagina();
+        }
+    });
+    panel.querySelector('#cuotaBusqueda').addEventListener('input', event => {
+        clearTimeout(temporizadorBusqueda);
+        temporizadorBusqueda = setTimeout(() => { estado.q = event.target.value.trim(); estado.page = 1; cargarPagina(); }, 300);
+    });
+    panel.querySelector('#cuotaPaginaAnterior').onclick = () => { if (estado.page > 1) { estado.page--; cargarPagina(); } };
+    panel.querySelector('#cuotaPaginaSiguiente').onclick = () => { if (estado.page < estado.totalPages) { estado.page++; cargarPagina(); } };
+    panel.querySelector('#btnLimpiarSeleccionCuotas').onclick = () => { seleccionados.clear(); actualizarSeleccion(); panel.querySelectorAll('.cuota-unidad-check').forEach(check => { check.checked = false; }); };
+    panel.querySelector('#formCuotaApartamentos').onsubmit = async event => {
+        event.preventDefault();
+        if (!seleccionados.size) return alert('Selecciona al menos una unidad.');
+        const data = new FormData();
+        data.append('action', 'configurar_cuota');
+        data.append('alcance', 'inmuebles');
+        data.append('valor', panel.querySelector('#cuotaValorApartamentos').value);
+        data.append('inmueble_ids_json', JSON.stringify([...seleccionados]));
+        const response = await fetch('api/finanzas.php', { method: 'POST', body: data });
+        const result = await response.json();
+        alert(result.message);
+        if (result.status === 'success') { seleccionados.clear(); panel.querySelector('#cuotaValorApartamentos').value = ''; await cargarPagina(); }
+    };
+    document.getElementById('formGenerarCobro').onsubmit = async event => { event.preventDefault(); const data = new FormData(); data.append('action', 'generar_cobro'); data.append('periodo', document.getElementById('cobroPeriodo').value); const chargeResponse = await fetch('api/finanzas.php', { method: 'POST', body: data }); const chargeResult = await chargeResponse.json(); alert(chargeResult.message); if (chargeResult.status === 'success') { modal.classList.add('hidden'); loadFinanzas(); } };
+    await cargarPagina();
+};
+
+const etiquetasCamposFormulario = {
+    loginEmail: 'Correo electrónico', loginPassword: 'Contraseña', repPagoValor: 'Valor pagado', repPagoRef: 'Referencia o comprobante', repPagoDescripcion: 'Descripción', repPagoSoporte: 'Soporte del pago', repPagoMetodo: 'Medio de pago', evTitulo: 'Título del evento', evFecha: 'Fecha y hora', evLugar: 'Lugar', evDescripcion: 'Descripción', comTitulo: 'Título de la novedad', comContenido: 'Contenido de la novedad', cobroPeriodo: 'Período de cobro', pagoInmuebleId: 'Inmueble', pagoValor: 'Valor pagado', pagoMetodo: 'Medio de pago', pagoReferencia: 'Referencia o comprobante', pagoDescripcion: 'Descripción', pagoSoporte: 'Soporte del pago', reservaZonaId: 'Zona social', reservaFecha: 'Fecha de reserva', passwordActual: 'Contraseña actual', passwordNueva: 'Nueva contraseña', passwordConfirmacion: 'Confirmación de contraseña'
+};
+let consecutivoEtiquetaFormulario = 0;
+
+function rotularFormularios(root = document) {
+    const formularios = root.matches?.('form') ? [root] : [...root.querySelectorAll?.('form') || []];
+    formularios.forEach(formulario => formulario.querySelectorAll('input, select, textarea').forEach(campo => {
+        if (campo.dataset.etiquetado === 'si' || ['hidden', 'submit', 'button', 'checkbox', 'radio'].includes(campo.type) || campo.labels?.length) return;
+        const texto = etiquetasCamposFormulario[campo.id] || campo.dataset.label || (campo.placeholder || '').replace(/\s*\([^)]*\)/g, '') || campo.querySelector?.('option')?.textContent?.replace(/[.….]+$/, '').trim();
+        campo.dataset.etiquetado = 'si';
+        if (!texto) return;
+        if (!campo.id) campo.id = `campo-formulario-${++consecutivoEtiquetaFormulario}`;
+        const etiqueta = document.createElement('label');
+        etiqueta.className = 'form-field-label';
+        etiqueta.htmlFor = campo.id;
+        etiqueta.textContent = texto;
+        campo.before(etiqueta);
+    }));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    rotularFormularios();
+    new MutationObserver(mutations => mutations.forEach(mutation => mutation.addedNodes.forEach(node => {
+        if (node.nodeType === Node.ELEMENT_NODE) rotularFormularios(node);
+    }))).observe(document.body, { childList: true, subtree: true });
+});
+
+
+// Estado financiero ampliado, cron y parqueaderos.
+const cargarMisPagosConEstadoBase = loadMisPagos;
+loadMisPagos = async function () {
+    await cargarMisPagosConEstadoBase();
+    const response = await fetch('api/finanzas.php?action=mis_pagos');
+    const result = await response.json();
+    if (result.status !== 'success') return;
+    const { cuotas = [], proxima_cuota: proximaCuota = 0, historial = [] } = result.data;
+    const view = document.querySelector('#tb-mis-pagos')?.closest('.view');
+    if (!view) return;
+    const anterior = document.getElementById('resident-finance-status');
+    if (anterior) anterior.remove();
+    const pendientes = historial.filter(pago => pago.estado === 'pendiente').length;
+    const aprobados = historial.filter(pago => pago.estado === 'aprobado').length;
+    const tablaCuotas = cuotas.length ? cuotas.map(cuota => `<tr><td>${String(cuota.mes).padStart(2, '0')}/${cuota.anio}</td><td>${formatCurrency(cuota.valor)}</td><td><span class="reserva-estado estado-pendiente">Cobro generado</span></td></tr>`).join('') : '<tr><td colspan="3">Aún no hay cuotas generadas para este inmueble.</td></tr>';
+    const panel = document.createElement('section');
+    panel.id = 'resident-finance-status';
+    panel.className = 'resident-finance-status';
+    panel.innerHTML = `
+        <div class="finance-status-cards">
+            <div><span>Próxima cuota configurada</span><strong>${formatCurrency(proximaCuota)}</strong></div>
+            <div><span>Pagos por aprobar</span><strong>${pendientes}</strong></div>
+            <div><span>Pagos aprobados</span><strong>${aprobados}</strong></div>
+        </div>
+        <div class="card finance-generated-charges"><div class="finance-section-heading"><div><h3>Cuotas generadas</h3><p>Consulta los cobros que administración ha generado para tu inmueble.</p></div></div><div class="table-responsive"><table class="data-table"><thead><tr><th>Período</th><th>Valor</th><th>Estado</th></tr></thead><tbody>${tablaCuotas}</tbody></table></div></div>`;
+    document.getElementById('historial-pagos')?.insertAdjacentElement('beforebegin', panel);
+};
+
+const cargarFinanzasConResumenBase = loadFinanzas;
+loadFinanzas = async function () {
+    await cargarFinanzasConResumenBase();
+    try {
+        const response = await fetch('api/finanzas.php?action=resumen_cartera');
+        const result = await response.json();
+        if (result.status !== 'success') return;
+        const data = result.data;
+        const view = document.getElementById('modalCobro')?.closest('.view');
+        if (!view || document.getElementById('finance-operational-summary')) return;
+        const panel = document.createElement('section');
+        panel.id = 'finance-operational-summary';
+        panel.className = 'finance-operational-summary';
+        panel.innerHTML = `
+            <div class="finance-admin-metric"><span>Cartera total</span><strong>${formatCurrency(data.total_cartera)}</strong></div>
+            <div class="finance-admin-metric"><span>Inmuebles en mora</span><strong>${Number(data.inmuebles_en_mora || 0)}</strong></div>
+            <div class="finance-admin-metric"><span>Cuotas generadas este mes</span><strong>${Number(data.cuotas_generadas || 0)}</strong><small>${formatCurrency(data.valor_cuotas)}</small></div>
+            <div class="finance-admin-metric"><span>Próximo recaudo configurado</span><strong>${formatCurrency(data.proximo_recaudo)}</strong></div>
+            <div class="finance-admin-metric"><span>Pagos por aprobar</span><strong>${Number(data.pagos_pendientes || 0)}</strong><small>${Number(data.pagos_aprobados || 0)} aprobados</small></div>`;
+        document.getElementById('panel-cuotas-configuradas')?.insertAdjacentElement('beforebegin', panel);
+    } catch (error) {
+        console.error('Error cargando resumen de cartera', error);
+    }
+};
+
+let parqueaderosActuales = [];
+let inmueblesParqueaderos = [];
+const cargarVistaConParqueaderosBase = loadView;
+loadView = function (viewName) {
+    if (viewName !== 'parqueaderos') {
+        cargarVistaConParqueaderosBase(viewName);
+        return;
+    }
+    document.getElementById('view-container').innerHTML = `
+        <div class="view parqueaderos-view">
+            <div class="section-toolbar"><div><p class="section-kicker">Administración · Inmuebles</p><h1 class="page-title">Parqueaderos</h1><p class="muted">Crea cupos y conserva el historial al asignarlos o retirarlos de una unidad.</p></div></div>
+            <div class="parking-forms-grid">
+                <form id="formParqueadero" class="card parking-form"><h3><i class="fa-solid fa-square-parking"></i> Crear parqueadero</h3><input name="codigo" maxlength="50" placeholder="Código, ej. P-101" required><select name="tipo"><option value="administracion">Administración</option><option value="privado">Privado</option><option value="visitante">Visitante</option><option value="otro">Otro</option></select><select name="estado"><option value="disponible">Disponible</option><option value="inactivo">Inactivo</option></select><textarea name="observaciones" maxlength="255" rows="2" placeholder="Observaciones opcionales"></textarea><button class="btn btn-primary" type="submit">Crear parqueadero</button></form>
+                <form id="formAsignarParqueadero" class="card parking-form"><h3><i class="fa-solid fa-link"></i> Asignar a inmueble</h3><select id="asignarParqueadero" name="parqueadero_id" required><option value="">Cargando parqueaderos…</option></select><select id="asignarInmueble" name="inmueble_id" required><option value="">Cargando inmuebles…</option></select><button class="btn btn-primary" type="submit">Asignar parqueadero</button><p class="muted">Puedes retirarlo después; la asignación no se borra del historial.</p></form>
+            </div>
+            <div class="card table-responsive"><h3>Catálogo y asignaciones actuales</h3><table class="data-table"><thead><tr><th>Código</th><th>Tipo</th><th>Estado</th><th>Asignado a</th><th>Acciones</th></tr></thead><tbody id="tb-parqueaderos"><tr><td colspan="5">Cargando…</td></tr></tbody></table></div>
+        </div>`;
+    loadParqueaderos();
+};
+
+async function loadParqueaderos() {
+    const [parkingResponse, inmuebleResponse] = await Promise.all([fetch('api/parqueaderos.php?action=list'), fetch('api/parqueaderos.php?action=inmuebles')]);
+    const [parkingResult, inmuebleResult] = await Promise.all([parkingResponse.json(), inmuebleResponse.json()]);
+    if (parkingResult.status !== 'success' || inmuebleResult.status !== 'success') return;
+    parqueaderosActuales = parkingResult.data || [];
+    inmueblesParqueaderos = inmuebleResult.data || [];
+    const disponibles = parqueaderosActuales.filter(parqueadero => parqueadero.estado === 'disponible');
+    document.getElementById('asignarParqueadero').innerHTML = '<option value="">Selecciona un parqueadero…</option>' + disponibles.map(parqueadero => `<option value="${Number(parqueadero.id)}">${escapeHtml(parqueadero.codigo)} · ${escapeHtml(parqueadero.tipo)}</option>`).join('');
+    document.getElementById('asignarInmueble').innerHTML = '<option value="">Selecciona un inmueble…</option>' + inmueblesParqueaderos.map(inmueble => `<option value="${Number(inmueble.id)}">${escapeHtml(inmueble.bloque)} · ${escapeHtml(inmueble.nomenclatura || inmueble.apartamento)}</option>`).join('');
+    const table = document.getElementById('tb-parqueaderos');
+    table.innerHTML = parqueaderosActuales.length ? parqueaderosActuales.map(parqueadero => {
+        const unidad = parqueadero.asignacion_id ? `${parqueadero.torre || 'Sin bloque'} · ${parqueadero.nomenclatura || parqueadero.apartamento}` : '—';
+        const acciones = parqueadero.asignacion_id ? `<button class="btn btn-ghost parking-action" onclick="window.retirarParqueadero(${Number(parqueadero.asignacion_id)})">Retirar</button>` : '—';
+        return `<tr><td><strong>${escapeHtml(parqueadero.codigo)}</strong></td><td>${escapeHtml(parqueadero.tipo)}</td><td><span class="reserva-estado ${parqueadero.estado === 'asignado' ? 'estado-aprobada' : parqueadero.estado === 'inactivo' ? 'estado-rechazada' : 'estado-pendiente'}">${escapeHtml(parqueadero.estado)}</span></td><td>${escapeHtml(unidad)}</td><td>${acciones} <button class="btn btn-ghost parking-action" onclick="window.verHistorialParqueadero(${Number(parqueadero.id)}, '${escapeHtml(parqueadero.codigo)}')">Historial</button></td></tr>`;
+    }).join('') : '<tr><td colspan="5">No hay parqueaderos creados.</td></tr>';
+
+    document.getElementById('formParqueadero').onsubmit = async event => { event.preventDefault(); const data = new FormData(event.target); data.append('action', 'guardar'); const response = await fetch('api/parqueaderos.php', { method: 'POST', body: data }); const result = await response.json(); alert(result.message); if (result.status === 'success') { event.target.reset(); loadParqueaderos(); } };
+    document.getElementById('formAsignarParqueadero').onsubmit = async event => { event.preventDefault(); const data = new FormData(event.target); data.append('action', 'asignar'); const response = await fetch('api/parqueaderos.php', { method: 'POST', body: data }); const result = await response.json(); alert(result.message); if (result.status === 'success') { event.target.reset(); loadParqueaderos(); } };
+}
+
+window.retirarParqueadero = async function (asignacionId) {
+    const motivo = prompt('Motivo del retiro (opcional):') ?? '';
+    if (!confirm('¿Retirar este parqueadero de la unidad? El historial se conservará.')) return;
+    const data = new FormData(); data.append('action', 'retirar'); data.append('asignacion_id', asignacionId); data.append('motivo_retiro', motivo);
+    const response = await fetch('api/parqueaderos.php', { method: 'POST', body: data }); const result = await response.json(); alert(result.message); if (result.status === 'success') loadParqueaderos();
+};
+window.verHistorialParqueadero = async function (parqueaderoId, codigo) {
+    const response = await fetch(`api/parqueaderos.php?action=historial&parqueadero_id=${encodeURIComponent(parqueaderoId)}`); const result = await response.json();
+    if (result.status !== 'success') return alert(result.message);
+    const historial = result.data.length ? result.data.map(item => `${item.torre || 'Sin bloque'} · ${item.nomenclatura || item.apartamento}: ${formatDate(item.asignado_en)}${item.retirado_en ? ` → ${formatDate(item.retirado_en)}` : ' (asignación vigente)'}${item.motivo_retiro ? ` · ${item.motivo_retiro}` : ''}`).join('\n') : 'No hay asignaciones registradas.';
+    alert(`Historial ${codigo}\n\n${historial}`);
+};
+
+
+// Operación administrativa: usuarios, parqueaderos, reservas internas y configuración.
+const iniciarAppOperativoBase = initApp;
+initApp = function () {
+    iniciarAppOperativoBase();
+    if (currentUser?.rol === 'vigilante') {
+        const zonasLink = document.querySelector('.nav-links li[data-view="zonas"]');
+        if (zonasLink) zonasLink.style.display = 'flex';
+    }
+};
+
+loadUsuarios = async function () {
+    const tbody = document.getElementById('listaUsuarios');
+    if (!tbody) return;
+    const response = await fetch('api/users.php?action=list');
+    const result = await response.json();
+    if (result.status !== 'success') return alert(result.message);
+    usuariosActuales = result.data || [];
+    const contador = document.getElementById('usuarios-contador');
+    if (contador) contador.textContent = `${usuariosActuales.filter(usuario => Number(usuario.activo)).length} activos · ${usuariosActuales.filter(usuario => !Number(usuario.activo)).length} desactivados`;
+    tbody.innerHTML = usuariosActuales.length ? usuariosActuales.map(usuario => {
+        const activo = Number(usuario.activo) === 1;
+        const estado = activo ? '<span class="user-state user-state-active">Activo</span>' : `<span class="user-state user-state-disabled" title="${escapeHtml(usuario.motivo_desactivacion || 'Sin motivo')}">Desactivado</span>`;
+        const accion = Number(usuario.id) === Number(currentUser?.id) ? '<span class="muted">Sesión actual</span>' : `<button class="btn btn-ghost user-status-action" onclick="window.cambiarEstadoUsuario(${Number(usuario.id)}, ${activo ? 0 : 1})">${activo ? '<i class="fa-solid fa-user-slash"></i> Deshabilitar' : '<i class="fa-solid fa-user-check"></i> Reactivar'}</button>`;
+        return `<tr class="${activo ? '' : 'user-row-disabled'}"><td><strong>${escapeHtml(usuario.nombre)}</strong><br><small>${estado}</small></td><td>${escapeHtml(usuario.documento)}</td><td><span class="reserva-estado">${escapeHtml(usuario.rol)}</span></td><td>${escapeHtml(usuario.email)}</td><td class="user-actions"><button class="btn btn-ghost user-status-action" onclick="window.openUsuarioModal(${Number(usuario.id)})"><i class="fa-solid fa-pen"></i> Editar</button>${accion}</td></tr>`;
+    }).join('') : '<tr><td colspan="5">No hay usuarios registrados.</td></tr>';
+};
+
+window.cambiarEstadoUsuario = async function (usuarioId, activar) {
+    let motivo = '';
+    if (!activar) {
+        motivo = prompt('Motivo de la deshabilitación (opcional):');
+        if (motivo === null) return;
+        if (!confirm('La cuenta no podrá iniciar sesión. Su historial se conservará. ¿Continuar?')) return;
+    }
+    const data = new FormData();
+    data.append('action', activar ? 'reactivar_usuario' : 'desactivar_usuario');
+    data.append('usuario_id', usuarioId);
+    if (!activar) data.append('motivo_desactivacion', motivo);
+    const response = await fetch('api/users.php', { method: 'POST', body: data });
+    const result = await response.json();
+    alert(result.message);
+    if (result.status === 'success') document.getElementById('vigilantes-grid') ? loadVigilantes() : loadUsuarios();
+};
+
+loadVigilantes = async function () {
+    const grid = document.getElementById('vigilantes-grid');
+    if (!grid) return;
+    const response = await fetch('api/users.php?action=list_vigilantes');
+    const result = await response.json();
+    if (result.status !== 'success') return alert(result.message);
+    vigilantesActuales = result.data || [];
+    grid.innerHTML = vigilantesActuales.length ? vigilantesActuales.map(vigilante => {
+        const activo = Number(vigilante.activo) === 1;
+        const iniciales = escapeHtml(vigilante.nombre || 'VG').split(/\s+/).map(parte => parte[0]).join('').slice(0, 2).toUpperCase();
+        const foto = Number(vigilante.tiene_foto) ? `<img src="api/users.php?action=ver_foto_vigilante&vigilante_id=${Number(vigilante.id)}" alt="Foto de ${escapeHtml(vigilante.nombre)}">` : `<span>${iniciales}</span>`;
+        return `<article class="vigilante-card ${activo ? '' : 'vigilante-card-disabled'}"><div class="vigilante-photo">${foto}</div><div class="vigilante-card-body"><div class="vigilante-card-title"><h3>${escapeHtml(vigilante.nombre)}</h3><span class="user-state ${activo ? 'user-state-active' : 'user-state-disabled'}">${activo ? 'Activo' : 'Desactivado'}</span></div><p class="vigilante-documento"><i class="fa-regular fa-id-card"></i> ${escapeHtml(vigilante.documento)}</p><dl><div><dt>Teléfono</dt><dd>${escapeHtml(vigilante.contacto || 'No registrado')}</dd></div><div><dt>Turno</dt><dd>${escapeHtml(vigilante.turno || 'Sin definir')}</dd></div><div><dt>Horario</dt><dd>${escapeHtml(vigilante.horario || 'Sin definir')}</dd></div></dl>${vigilante.observaciones ? `<p class="vigilante-notas">${escapeHtml(vigilante.observaciones)}</p>` : ''}<div class="vigilante-card-actions"><button class="btn btn-ghost vigilante-edit" type="button" onclick="window.abrirModalVigilante(${Number(vigilante.id)})"><i class="fa-solid fa-pen"></i> Editar ficha</button><button class="btn btn-ghost vigilante-edit" type="button" onclick="window.cambiarEstadoUsuario(${Number(vigilante.id)}, ${activo ? 0 : 1})">${activo ? '<i class="fa-solid fa-user-slash"></i> Deshabilitar' : '<i class="fa-solid fa-user-check"></i> Reactivar'}</button></div></div></article>`;
+    }).join('') : '<div class="empty-state"><i class="fa-solid fa-shield-halved"></i><h3>Aún no hay vigilantes registrados</h3><p>Crea la primera ficha de vigilancia para asignar sus datos y horario.</p><button class="btn btn-primary" type="button" onclick="window.abrirModalVigilante()">Crear vigilante</button></div>';
+};
+
+const abrirInmuebleOperativoBase = window.abrirModalInmueble;
+window.abrirModalInmueble = function (id = null) {
+    abrirInmuebleOperativoBase(id);
+    const inmueble = inmueblesActuales.find(item => Number(item.id) === Number(id));
+    const label = document.querySelector('label[for="inmuebleParqueadero"]');
+    if (!label) return;
+    const disponibles = (window.parqueaderosEnInmuebles || []).filter(parqueadero => parqueadero.estado === 'disponible' || Number(parqueadero.id) === Number(inmueble?.parqueadero_id));
+    label.innerHTML = `Parqueadero del catálogo <small>(opcional)</small><select id="inmuebleParqueadero"><option value="">Sin parqueadero asignado</option>${disponibles.map(parqueadero => `<option value="${Number(parqueadero.id)}" ${Number(parqueadero.id) === Number(inmueble?.parqueadero_id) ? 'selected' : ''}>${escapeHtml(parqueadero.codigo)} · ${escapeHtml(parqueadero.tipo)} · ${parqueadero.estado === 'disponible' ? 'Libre' : 'Asignado a esta unidad'}</option>`).join('')}</select><small class="field-help">Los cupos ocupados por otras unidades no aparecen; al elegir “sin parqueadero” se conserva el retiro en el historial.</small>`;
+};
+
+loadInmuebles = async function () {
+    const [inmueblesResponse, parqueaderosResponse] = await Promise.all([fetch('api/inmuebles.php?action=list'), fetch('api/parqueaderos.php?action=list')]);
+    const [inmueblesResult, parqueaderosResult] = await Promise.all([inmueblesResponse.json(), parqueaderosResponse.json()]);
+    if (inmueblesResult.status !== 'success') return alert(inmueblesResult.message);
+    inmueblesActuales = inmueblesResult.data || [];
+    window.parqueaderosEnInmuebles = parqueaderosResult.status === 'success' ? parqueaderosResult.data : [];
+    const tabla = document.getElementById('tb-inmuebles');
+    if (tabla) tabla.innerHTML = inmueblesActuales.length ? inmueblesActuales.map(inmueble => {
+        const parqueadero = inmueble.parqueadero_codigo ? `<strong>${escapeHtml(inmueble.parqueadero_codigo)}</strong><br><small>${escapeHtml(inmueble.parqueadero_tipo)}</small>` : '<span class="parking-free">Sin parqueadero</span>';
+        return `<tr><td>${escapeHtml(inmueble.tipo_unidad || 'apartamento')}</td><td>${escapeHtml(inmueble.torre || '—')}</td><td><strong>${escapeHtml(inmueble.nomenclatura || inmueble.apartamento)}</strong></td><td>${parqueadero}</td><td>${escapeHtml(inmueble.coeficiente || '0')}</td><td>${formatCurrency(inmueble.mora_actual)}</td><td><button class="btn btn-ghost" style="width:auto" onclick="window.abrirModalInmueble(${Number(inmueble.id)})">Editar</button></td></tr>`;
+    }).join('') : '<tr><td colspan="7">No hay unidades registradas.</td></tr>';
+    const form = document.getElementById('formInmueble');
+    if (form) form.onsubmit = guardarInmueble;
+};
+
+guardarInmueble = async function (event) {
+    event.preventDefault();
+    const data = new FormData();
+    const inmuebleId = Number(document.getElementById('inmuebleId').value || 0);
+    [['id', 'inmuebleId'], ['tipo_unidad', 'inmuebleTipo'], ['torre', 'inmuebleTorre'], ['nomenclatura', 'inmuebleNomenclatura'], ['coeficiente', 'inmuebleCoeficiente'], ['mora_actual', 'inmuebleMora']].forEach(([nombre, id]) => data.append(nombre, document.getElementById(id).value));
+    data.append('parqueadero', '');
+    data.append('action', 'guardar_inmueble');
+    const response = await fetch('api/inmuebles.php', { method: 'POST', body: data });
+    const result = await response.json();
+    if (result.status !== 'success') return alert(result.message);
+    const id = Number(result.data?.id || inmuebleId);
+    const parqueaderoId = Number(document.getElementById('inmuebleParqueadero')?.value || 0);
+    if (id) {
+        const cambio = new FormData();
+        cambio.append('action', 'cambiar_asignacion');
+        cambio.append('inmueble_id', id);
+        cambio.append('parqueadero_id', parqueaderoId);
+        const cambioResponse = await fetch('api/parqueaderos.php', { method: 'POST', body: cambio });
+        const cambioResult = await cambioResponse.json();
+        if (cambioResult.status !== 'success') return alert(`La unidad se guardó, pero no fue posible actualizar el parqueadero: ${cambioResult.message}`);
+    }
+    alert(result.message);
+    cerrarModalInmueble();
+    loadInmuebles();
+};
+
+const cargarConfiguracionOperativaBase = loadConfiguracion;
+loadConfiguracion = async function () {
+    const container = document.getElementById('view-container');
+    if (!container) return;
+    container.innerHTML = `<div class="view settings-view"><div class="settings-hero"><div><p class="section-kicker">Administración del conjunto</p><h1 class="page-title">Configuración</h1><p>Define la identidad del portal y consulta la automatización de cuotas.</p></div><span class="settings-hero-icon"><i class="fa-solid fa-sliders"></i></span></div><div class="settings-grid"><section class="card settings-card"><div class="settings-card-heading"><span class="settings-icon"><i class="fa-solid fa-building"></i></span><div><h2>Identidad del portal</h2><p>Los cambios se reflejan en la cabecera y en el acceso público.</p></div></div><form id="formConfiguracion" class="settings-form" enctype="multipart/form-data"><label for="config-nombre">Nombre de la copropiedad<input id="config-nombre" name="nombre" required></label><label for="config-logo">URL del logo <small>(opcional)</small><input id="config-logo" name="logo_url" type="url" placeholder="https://ejemplo.com/logo.png"></label><label for="config-logo-archivo">O carga un logo <small>JPG, PNG o WEBP · máximo 3 MB</small><input id="config-logo-archivo" name="logo_archivo" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"></label><img id="config-logo-preview" class="logo-preview hidden" alt="Vista previa del logo"><button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Guardar configuración</button></form></section><aside class="card settings-card automation-card"><div class="settings-card-heading"><span class="settings-icon settings-icon-automation"><i class="fa-solid fa-clock-rotate-left"></i></span><div><h2>Automatización de cuotas</h2><p>Estado de la tarea mensual instalada en el servidor.</p></div></div><div class="automation-status"><span class="automation-dot"></span><div><strong>Activa</strong><small>Se ejecuta con el usuario seguro del servidor.</small></div></div><dl class="automation-details"><div><dt>Frecuencia</dt><dd>Día 1 de cada mes</dd></div><div><dt>Hora</dt><dd>00:05</dd></div><div><dt>Qué genera</dt><dd>Cuotas de apartamentos con valor configurado</dd></div><div><dt>Configuración de valores</dt><dd>Finanzas → Cuotas por apartamentos</dd></div></dl><p class="automation-note"><i class="fa-solid fa-shield-halved"></i> El cron se instala en el servidor y no se edita desde el navegador para evitar cambios de seguridad. Las tarifas se administran en Finanzas.</p></aside></div></div>`;
+    const response = await fetch('api/conjuntos.php?action=get_config');
+    const result = await response.json();
+    if (result.status === 'success') {
+        document.getElementById('config-nombre').value = result.data?.nombre || '';
+        document.getElementById('config-logo').value = result.data?.logo_url || '';
+        if (result.data?.logo_url) { const preview = document.getElementById('config-logo-preview'); preview.src = result.data.logo_url; preview.classList.remove('hidden'); }
+    }
+    const form = document.getElementById('formConfiguracion');
+    const actualizarVista = () => { const archivo = document.getElementById('config-logo-archivo').files[0]; const url = archivo ? URL.createObjectURL(archivo) : document.getElementById('config-logo').value; const preview = document.getElementById('config-logo-preview'); if (url) { preview.src = url; preview.classList.remove('hidden'); } };
+    document.getElementById('config-logo').oninput = actualizarVista;
+    document.getElementById('config-logo-archivo').onchange = actualizarVista;
+    form.onsubmit = async event => { event.preventDefault(); const data = new FormData(form); data.append('action', 'update_config'); const saveResponse = await fetch('api/conjuntos.php', { method: 'POST', body: data }); const saveResult = await saveResponse.json(); alert(saveResult.message); if (saveResult.status === 'success') document.querySelectorAll('.logo span').forEach(element => element.textContent = document.getElementById('config-nombre').value); };
+};
+
+let reservasZonasActuales = [];
+let zonasReservaActuales = [];
+let inmueblesReservaActuales = [];
+
+function horaCorta(hora) {
+    return hora ? String(hora).slice(0, 5) : '';
+}
+
+function etiquetaHorarioReserva(reserva) {
+    const inicio = horaCorta(reserva.hora_inicio);
+    const fin = horaCorta(reserva.hora_fin);
+    return inicio && fin ? `${inicio} – ${fin}` : 'Bloque histórico: día completo';
+}
+
+function etiquetaPoliticaZona(zona) {
+    return `Máx. ${Number(zona.max_horas_reserva) || 1} h · ${Number(zona.max_reservas_diarias_inmueble) || 1} reserva(s)/día/inmueble`;
+}
+
+function eventoReserva(reserva, interno = false) {
+    const historica = !reserva.hora_inicio || !reserva.hora_fin;
+    const titulo = interno
+        ? `${reserva.inmueble_etiqueta || 'Inmueble no asignado'} · ${etiquetaHorarioReserva(reserva)}`
+        : (reserva.estado === 'aprobada' ? 'No disponible' : 'Solicitud pendiente');
+    return {
+        id: String(reserva.id || ''),
+        title: titulo,
+        start: historica ? reserva.fecha_reserva : `${reserva.fecha_reserva}T${horaCorta(reserva.hora_inicio)}`,
+        end: historica ? undefined : `${reserva.fecha_reserva}T${horaCorta(reserva.hora_fin)}`,
+        allDay: historica,
+        classNames: [reserva.estado === 'aprobada' ? 'zona-calendar-reserva' : 'zona-calendar-pendiente']
+    };
+}
+
+function fechaMinimaReserva(interna = false) {
+    const fecha = new Date();
+    if (!interna) fecha.setDate(fecha.getDate() + 1);
+    return fechaLocal(fecha);
+}
+
+function rellenarSelect(select, items, placeholder, etiqueta) {
+    if (!select) return;
+    const seleccionado = select.value;
+    select.innerHTML = `<option value="">${placeholder}</option>${items.map(item => `<option value="${Number(item.id)}">${escapeHtml(etiqueta(item))}</option>`).join('')}`;
+    if (items.some(item => String(item.id) === seleccionado)) select.value = seleccionado;
+}
+
+function configurarFormularioZona() {
+    const form = document.getElementById('formCrearZona');
+    if (!form || currentUser?.rol !== 'admin') return;
+    form.onsubmit = async event => {
+        event.preventDefault();
+        const data = new FormData();
+        const zonaId = document.getElementById('zonaId').value;
+        data.append('action', zonaId ? 'actualizar_zona' : 'crear_zona');
+        [['zona_id', 'zonaId'], ['nombre', 'zonaNombre'], ['descripcion', 'zonaDescripcion'], ['aforo', 'zonaAforo'], ['tarifa', 'zonaTarifa'], ['horarios', 'zonaHorarios'], ['max_horas_reserva', 'zonaMaxHorasReserva'], ['max_reservas_diarias_inmueble', 'zonaMaxReservasDiarias'], ['reglamento', 'zonaReglamento'], ['youtube_url', 'zonaYoutube']].forEach(([nombre, id]) => data.append(nombre, document.getElementById(id).value));
+        const imagen = document.getElementById('zonaImagen').files[0];
+        if (imagen) data.append('imagen', imagen);
+        const response = await fetch('api/zonas.php', { method: 'POST', body: data });
+        const result = await response.json();
+        alert(result.message);
+        if (result.status === 'success') { cerrarFormularioZona(); await loadZonas(); loadPublicZonas(); }
+    };
+}
+
+window.abrirFormularioZona = function (zona = null) {
+    const form = document.getElementById('formCrearZona');
+    if (!form) return;
+    form.reset();
+    document.getElementById('zonaId').value = zona?.id || '';
+    document.getElementById('tituloFormularioZona').textContent = zona ? 'Editar zona social' : 'Configurar zona social';
+    document.getElementById('btnGuardarZona').innerHTML = zona ? '<i class="fa-solid fa-floppy-disk"></i> Guardar cambios' : '<i class="fa-solid fa-plus"></i> Crear zona';
+    if (zona) {
+        document.getElementById('zonaNombre').value = zona.nombre || '';
+        document.getElementById('zonaDescripcion').value = zona.descripcion || '';
+        document.getElementById('zonaAforo').value = zona.aforo || '';
+        document.getElementById('zonaTarifa').value = zona.tarifa || 0;
+        document.getElementById('zonaHorarios').value = zona.horarios || '';
+        document.getElementById('zonaMaxHorasReserva').value = zona.max_horas_reserva || 1;
+        document.getElementById('zonaMaxReservasDiarias').value = zona.max_reservas_diarias_inmueble || 1;
+        document.getElementById('zonaReglamento').value = zona.reglamento || '';
+        document.getElementById('zonaYoutube').value = zona.youtube_url || '';
+    }
+    document.getElementById('modalZona').classList.remove('hidden');
+    document.getElementById('zonaNombre').focus();
+};
+
+window.editarZona = function (zonaId) {
+    const zona = zonasReservaActuales.find(item => Number(item.id) === Number(zonaId));
+    if (zona) window.abrirFormularioZona(zona);
+};
+
+function renderTablaReservas(esInterno) {
+    const tabla = document.getElementById('tb-zonas');
+    if (!tabla) return;
+    tabla.innerHTML = reservasZonasActuales.length ? reservasZonasActuales.map(reserva => {
+        const estado = escapeHtml(reserva.estado);
+        const acciones = esInterno
+            ? `<button class="btn btn-ghost internal-reservation-action" onclick="window.abrirReservaInterna(${Number(reserva.id)})">Ver / gestionar</button>`
+            : '—';
+        return `<tr><td>${escapeHtml(reserva.zona_nombre)}</td><td><strong>${escapeHtml(reserva.inmueble_etiqueta || 'Histórico sin inmueble')}</strong></td><td>${formatDate(reserva.fecha_reserva)}</td><td>${escapeHtml(etiquetaHorarioReserva(reserva))}</td><td><span class="reserva-estado estado-${estado}">${estado}</span></td><td>${acciones}</td></tr>`;
+    }).join('') : '<tr><td colspan="6">No hay reservas registradas.</td></tr>';
+}
+
+function renderCalendarioPersonal() {
+    const contenedor = document.getElementById('calendar');
+    if (!contenedor || !window.FullCalendar) return;
+    if (window.zonasCalendar) window.zonasCalendar.destroy();
+    window.zonasCalendar = new FullCalendar.Calendar(contenedor, {
+        initialView: 'timeGridWeek', locale: 'es', height: 'auto',
+        headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,dayGridMonth' },
+        events: reservasZonasActuales.map(reserva => eventoReserva(reserva, false))
+    });
+    window.zonasCalendar.render();
+}
+
+async function renderDisponibilidadResidente() {
+    const selectZona = document.getElementById('reservaZonaId');
+    let calendario = document.getElementById('calendar-disponibilidad-residente');
+    if (!selectZona || !window.FullCalendar) return;
+    if (!calendario) {
+        calendario = document.createElement('section');
+        calendario.id = 'calendar-disponibilidad-residente';
+        calendario.className = 'resident-zone-calendar';
+        calendario.innerHTML = '<div class="resident-availability-header"><div><p class="section-kicker">Disponibilidad por horas</p><h3>Agenda de la zona</h3><p>Las franjas ocupadas no exponen el inmueble ni la persona que las solicitó.</p></div></div><div class="resident-zone-calendar-body"></div>';
+        document.getElementById('calendar')?.closest('.card')?.insertAdjacentElement('beforebegin', calendario);
+    }
+    const cuerpo = calendario.querySelector('.resident-zone-calendar-body');
+    if (!selectZona.value) { cuerpo.innerHTML = '<p class="muted">Selecciona una zona para consultar sus horarios disponibles.</p>'; return; }
+    const response = await fetch(`api/zonas.php?action=zona_disponibilidad&zona_id=${encodeURIComponent(selectZona.value)}`);
+    const result = await response.json();
+    if (result.status !== 'success') { cuerpo.innerHTML = `<p class="muted">${escapeHtml(result.message || 'No fue posible cargar la disponibilidad.')}</p>`; return; }
+    cuerpo.innerHTML = '';
+    if (window.residentAvailabilityCalendar) window.residentAvailabilityCalendar.destroy();
+    window.residentAvailabilityCalendar = new FullCalendar.Calendar(cuerpo, {
+        initialView: 'timeGridWeek', locale: 'es', height: 'auto', slotMinTime: '00:00:00', slotMaxTime: '24:00:00',
+        headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,dayGridMonth' },
+        events: (result.data.reservas || []).map(reserva => eventoReserva(reserva, false)),
+        dateClick: info => {
+            const fecha = fechaLocal(info.date);
+            if (fecha < fechaMinimaReserva()) return;
+            document.getElementById('reservaFecha').value = fecha;
+            document.getElementById('reservaHoraInicio').value = info.allDay ? '08:00' : horaCorta(`${String(info.date.getHours()).padStart(2, '0')}:${String(info.date.getMinutes()).padStart(2, '0')}`);
+            document.getElementById('reservaHoraFin').focus();
+        }
+    });
+    window.residentAvailabilityCalendar.render();
+}
+
+function configurarReservaResidente() {
+    const form = document.getElementById('formReservarZona');
+    const selectZona = document.getElementById('reservaZonaId');
+    if (!form || !selectZona) return;
+    selectZona.onchange = renderDisponibilidadResidente;
+    form.onsubmit = async event => {
+        event.preventDefault();
+        const data = new FormData();
+        data.append('action', 'crear_reserva');
+        [['zona_id', 'reservaZonaId'], ['inmueble_id', 'reservaInmuebleId'], ['fecha_reserva', 'reservaFecha'], ['hora_inicio', 'reservaHoraInicio'], ['hora_fin', 'reservaHoraFin']].forEach(([nombre, id]) => data.append(nombre, document.getElementById(id).value));
+        const response = await fetch('api/zonas.php', { method: 'POST', body: data });
+        const result = await response.json();
+        alert(result.message);
+        if (result.status === 'success') { form.reset(); await loadZonas(); }
+    };
+}
+
+function renderCalendarioInterno() {
+    const contenedor = document.getElementById('calendar');
+    if (!contenedor || !window.FullCalendar) return;
+    if (!zonasReservaActuales.length) { contenedor.innerHTML = '<p class="empty-state">No hay zonas configuradas para consultar disponibilidad.</p>'; return; }
+    const previo = Number(document.getElementById('calendarioZonaInterna')?.value || zonasReservaActuales[0].id);
+    contenedor.innerHTML = `<div class="internal-calendar-heading"><div><p class="section-kicker">Disponibilidad por inmueble</p><h3>Agenda operativa por horas</h3><p class="muted">Selecciona una zona para ver sus franjas. Haz clic en un horario libre para crear una reserva interna.</p></div><label for="calendarioZonaInterna">Zona social<select id="calendarioZonaInterna">${zonasReservaActuales.map(zona => `<option value="${Number(zona.id)}" ${Number(zona.id) === previo ? 'selected' : ''}>${escapeHtml(zona.nombre)}</option>`).join('')}</select></label></div><div id="calendar-interno" class="internal-zone-calendar"></div>`;
+    const selector = document.getElementById('calendarioZonaInterna');
+    const render = () => {
+        const zonaId = Number(selector.value);
+        const reservas = reservasZonasActuales.filter(reserva => Number(reserva.zona_id) === zonaId && ['pendiente', 'aprobada'].includes(reserva.estado));
+        if (window.zonasCalendar) window.zonasCalendar.destroy();
+        window.zonasCalendar = new FullCalendar.Calendar(document.getElementById('calendar-interno'), {
+            initialView: 'timeGridWeek', locale: 'es', height: 'auto', slotMinTime: '00:00:00', slotMaxTime: '24:00:00',
+            headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,dayGridMonth' },
+            events: reservas.map(reserva => eventoReserva(reserva, true)),
+            dateClick: info => {
+                const fecha = fechaLocal(info.date);
+                if (fecha < fechaMinimaReserva(true)) return;
+                const hora = info.allDay ? '08:00' : `${String(info.date.getHours()).padStart(2, '0')}:${String(info.date.getMinutes()).padStart(2, '0')}`;
+                window.abrirReservaInterna(0, fecha, zonaId, hora);
+            },
+            eventClick: info => window.abrirReservaInterna(Number(info.event.id))
+        });
+        window.zonasCalendar.render();
+    };
+    selector.onchange = render;
+    render();
+}
+
+loadZonas = async function () {
+    const esInterno = ['admin', 'vigilante'].includes(currentUser?.rol);
+    const [reservasResponse, zonasResponse, inmueblesResponse] = await Promise.all([
+        fetch('api/zonas.php?action=list'),
+        fetch('api/zonas.php?action=zonas_list'),
+        fetch('api/zonas.php?action=inmuebles_reservas')
+    ]);
+    const [reservasResult, zonasResult, inmueblesResult] = await Promise.all([reservasResponse.json(), zonasResponse.json(), inmueblesResponse.json()]);
+    if (reservasResult.status !== 'success' || zonasResult.status !== 'success' || inmueblesResult.status !== 'success') {
+        alert('No fue posible cargar la operación de reservas.');
+        return;
+    }
+    reservasZonasActuales = reservasResult.data || [];
+    zonasReservaActuales = zonasResult.data || [];
+    inmueblesReservaActuales = inmueblesResult.data || [];
+    zonasActuales = zonasReservaActuales;
+
+    const esAdmin = currentUser?.rol === 'admin';
+    document.getElementById('panelReservarZona')?.classList.toggle('hidden', esInterno);
+    document.getElementById('btnNuevaZona')?.classList.toggle('hidden', !esAdmin);
+    document.getElementById('panelGestionZonas')?.classList.toggle('hidden', !esAdmin);
+    const config = document.getElementById('tb-zonas-config');
+    if (config && esAdmin) config.innerHTML = zonasReservaActuales.length ? zonasReservaActuales.map(zona => `<tr><td><strong>${escapeHtml(zona.nombre)}</strong><br><small>${escapeHtml(zona.descripcion || 'Sin descripción')}</small></td><td>${Number(zona.aforo) || '—'}</td><td>${escapeHtml(zona.horarios || '—')}</td><td>${escapeHtml(etiquetaPoliticaZona(zona))}</td><td>${Number(zona.tarifa || 0) ? formatCurrency(zona.tarifa) : 'Sin costo'}</td><td><button class="btn btn-ghost" style="width:auto" onclick="editarZona(${Number(zona.id)})"><i class="fa-solid fa-pen"></i> Editar</button></td></tr>`).join('') : '<tr><td colspan="6">No hay zonas configuradas.</td></tr>';
+    configurarFormularioZona();
+    renderTablaReservas(esInterno);
+
+    if (esInterno) {
+        document.getElementById('calendar-disponibilidad-residente')?.remove();
+        renderCalendarioInterno();
+        return;
+    }
+    rellenarSelect(document.getElementById('reservaZonaId'), zonasReservaActuales, 'Selecciona una zona…', zona => `${zona.nombre} · ${zona.horarios}`);
+    rellenarSelect(document.getElementById('reservaInmuebleId'), inmueblesReservaActuales, inmueblesReservaActuales.length ? 'Selecciona tu inmueble…' : 'No tienes inmuebles asociados', inmueble => inmueble.etiqueta);
+    const fecha = document.getElementById('reservaFecha');
+    if (fecha) fecha.min = fechaMinimaReserva();
+    configurarReservaResidente();
+    renderCalendarioPersonal();
+    renderDisponibilidadResidente();
+};
+
+window.abrirReservaInterna = function (reservaId = 0, fecha = '', zonaPreseleccionada = 0, horaPreseleccionada = '08:00') {
+    const reserva = reservasZonasActuales.find(item => Number(item.id) === Number(reservaId));
+    let modal = document.getElementById('modalReservaInterna');
+    if (!modal) { document.body.insertAdjacentHTML('beforeend', '<div id="modalReservaInterna" class="login-modal internal-reservation-modal hidden"></div>'); modal = document.getElementById('modalReservaInterna'); }
+    if (reserva) {
+        const puedeAprobar = currentUser?.rol === 'admin' && reserva.estado === 'pendiente';
+        const puedeCancelar = ['pendiente', 'aprobada'].includes(reserva.estado);
+        modal.innerHTML = `<div class="login-box internal-reservation-dialog"><button class="close-btn" type="button" onclick="document.getElementById('modalReservaInterna').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button><p class="section-kicker">Reserva de zona</p><h2>${escapeHtml(reserva.zona_nombre)}</h2><dl class="reservation-detail-list"><div><dt>Apartamento o casa</dt><dd>${escapeHtml(reserva.inmueble_etiqueta || 'Histórico sin inmueble asignado')}</dd></div><div><dt>Fecha</dt><dd>${formatDate(reserva.fecha_reserva)}</dd></div><div><dt>Horario</dt><dd>${escapeHtml(etiquetaHorarioReserva(reserva))}</dd></div><div><dt>Estado</dt><dd><span class="reserva-estado estado-${escapeHtml(reserva.estado)}">${escapeHtml(reserva.estado)}</span></dd></div></dl><div class="reservation-modal-actions">${puedeAprobar ? `<button class="btn btn-primary" onclick="window.gestionarReservaInterna(${Number(reserva.id)}, 'aprobar')">Aprobar</button><button class="btn btn-ghost" onclick="window.gestionarReservaInterna(${Number(reserva.id)}, 'rechazar')">Rechazar</button>` : ''}${puedeCancelar ? `<button class="btn btn-danger" onclick="window.gestionarReservaInterna(${Number(reserva.id)}, 'cancelar')">Cancelar reserva</button>` : ''}</div></div>`;
+    } else {
+        modal.innerHTML = `<div class="login-box internal-reservation-dialog"><button class="close-btn" type="button" onclick="document.getElementById('modalReservaInterna').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button><p class="section-kicker">Reserva interna</p><h2>Crear reserva</h2><p class="muted">Selecciona el inmueble y una franja; la reserva queda aprobada de inmediato.</p><form id="formReservaInterna" class="internal-reservation-form"><label>Zona social<select name="zona_id" required><option value="">Selecciona una zona</option>${zonasReservaActuales.map(zona => `<option value="${Number(zona.id)}" ${Number(zona.id) === Number(zonaPreseleccionada) ? 'selected' : ''}>${escapeHtml(zona.nombre)} · máx. ${Number(zona.max_horas_reserva) || 1} h</option>`).join('')}</select></label><label>Apartamento o casa<select name="inmueble_id" required><option value="">Selecciona un inmueble</option>${inmueblesReservaActuales.map(inmueble => `<option value="${Number(inmueble.id)}">${escapeHtml(inmueble.etiqueta)}</option>`).join('')}</select></label><div class="internal-reservation-time-grid"><label>Fecha<input name="fecha_reserva" type="date" min="${fechaMinimaReserva(true)}" value="${fecha}" required></label><label>Inicio<input name="hora_inicio" type="time" value="${horaPreseleccionada}" required></label><label>Fin<input name="hora_fin" type="time" required></label></div><button class="btn btn-primary" type="submit"><i class="fa-solid fa-calendar-check"></i> Crear reserva</button></form></div>`;
+        modal.querySelector('form').onsubmit = async event => { event.preventDefault(); const data = new FormData(event.currentTarget); data.append('action', 'crear_reserva_interna'); const response = await fetch('api/zonas.php', { method: 'POST', body: data }); const result = await response.json(); alert(result.message); if (result.status === 'success') { modal.classList.add('hidden'); await loadZonas(); } };
+    }
+    modal.classList.remove('hidden');
+};
+
+window.gestionarReservaInterna = async function (reservaId, accion) {
+    if (accion === 'cancelar' && !confirm('¿Cancelar esta reserva? Se conservará en el historial.')) return;
+    const data = new FormData();
+    data.append('reserva_id', reservaId);
+    if (accion === 'cancelar') data.append('action', 'cancelar_reserva');
+    else { data.append('action', 'estado_reserva'); data.append('estado', accion === 'aprobar' ? 'aprobada' : 'rechazada'); }
+    const response = await fetch('api/zonas.php', { method: 'POST', body: data });
+    const result = await response.json();
+    alert(result.message);
+    if (result.status === 'success') { document.getElementById('modalReservaInterna')?.classList.add('hidden'); await loadZonas(); }
+};
+
+window.abrirDetalleZona = async function (zonaId) {
+    const modal = document.getElementById('zona-detalle-modal');
+    const titulo = document.getElementById('zona-detalle-titulo');
+    if (!modal || !titulo) return;
+    modal.classList.remove('hidden');
+    titulo.textContent = 'Cargando zona…';
+    try {
+        const response = await fetch(`api/zonas.php?action=public_zona_detalle&zona_id=${encodeURIComponent(zonaId)}`);
+        const result = await response.json();
+        if (result.status !== 'success') throw new Error(result.message);
+        const { zona, reservas } = result.data;
+        document.getElementById('zona-detalle-imagen').style.backgroundImage = `linear-gradient(120deg, rgba(15,23,42,.2), rgba(15,23,42,.58)), url("${imagenZona(zona)}")`;
+        titulo.textContent = zona.nombre;
+        document.getElementById('zona-detalle-descripcion').textContent = zona.descripcion || 'Espacio disponible para el disfrute de la comunidad.';
+        document.getElementById('zona-detalle-aforo').textContent = `${zona.aforo || 'No definido'} personas`;
+        document.getElementById('zona-detalle-horario').textContent = zona.horarios || 'No definido';
+        document.getElementById('zona-detalle-tarifa').textContent = Number(zona.tarifa) ? formatCurrency(zona.tarifa) : 'Sin costo';
+        document.getElementById('zona-detalle-reglamento').textContent = zona.reglamento || 'No hay normas adicionales registradas.';
+        modal.dataset.zonaId = zona.id;
+        let video = document.getElementById('zona-detalle-video');
+        if (!video) { video = document.createElement('div'); video.id = 'zona-detalle-video'; video.className = 'zona-video'; document.querySelector('.zona-detalle-rules').insertAdjacentElement('afterend', video); }
+        const videoId = youtubeId(zona.youtube_url);
+        video.innerHTML = videoId ? `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}" title="Video de ${escapeHtml(zona.nombre)}" loading="lazy" allowfullscreen></iframe>` : '';
+        const calendario = document.getElementById('public-zona-calendar');
+        if (window.publicZonaCalendar) window.publicZonaCalendar.destroy();
+        window.publicZonaCalendar = new FullCalendar.Calendar(calendario, {
+            initialView: 'timeGridWeek', locale: 'es', height: 'auto', slotMinTime: '00:00:00', slotMaxTime: '24:00:00',
+            headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,dayGridMonth' },
+            events: (reservas || []).map(reserva => eventoReserva(reserva, false))
+        });
+        window.publicZonaCalendar.render();
+    } catch (error) {
+        console.error(error);
+        titulo.textContent = 'No fue posible cargar esta zona';
+    }
+};
+
+
+// Portería organizada por operación: directorio, visitas, paquetes y minuta.
+let seccionPorteriaActual = 'directorio';
+let opcionesUnidadesPorteria = '';
+const cargarVistaPorteriaSeparadaBase = loadView;
+loadView = function (viewName) {
+    // Compatibilidad: cualquier acceso heredado a Portería abre el Directorio nuevo.
+    if (viewName === 'porteria') viewName = 'directorio';
+    if (!['directorio', 'visitas', 'paquetes', 'minuta'].includes(viewName)) {
+        cargarVistaPorteriaSeparadaBase(viewName);
+        return;
+    }
+    seccionPorteriaActual = viewName;
+    const nombres = { directorio: 'Directorio', visitas: 'Visitas', paquetes: 'Paquetes', minuta: 'Novedades' };
+    const iconos = { directorio: 'fa-address-book', visitas: 'fa-person-walking-arrow-right', paquetes: 'fa-box', minuta: 'fa-clipboard' };
+    const acciones = {
+        directorio: '',
+        visitas: '<button class="btn btn-primary porteria-primary-action" onclick="window.abrirFormularioPorteria(\'visita\')"><i class="fa-solid fa-person-walking-arrow-right"></i> Registrar visita</button>',
+        paquetes: '<button class="btn btn-primary porteria-primary-action porteria-package-action" onclick="window.abrirFormularioPorteria(\'paquete\')"><i class="fa-solid fa-box"></i> Recibir paquete</button>',
+        minuta: '<button class="btn btn-primary porteria-primary-action" onclick="window.abrirFormularioPorteria(\'minuta\')"><i class="fa-solid fa-clipboard"></i> Registrar novedad</button>'
+    };
+    const contenido = {
+        directorio: `<div class="card porteria-card"><div class="porteria-search"><label for="busquedaDirectorio">Buscar residente</label><input id="busquedaDirectorio" type="search" placeholder="Nombre, torre o apartamento"></div><div class="table-responsive"><table class="data-table"><thead><tr><th>Torre</th><th>Unidad</th><th>Residente</th><th>Contacto</th></tr></thead><tbody id="tb-directorio"><tr><td colspan="4">Cargando directorio…</td></tr></tbody></table></div></div>`,
+        visitas: `<div class="card porteria-card table-responsive"><table class="data-table"><thead><tr><th>Visitante</th><th>Unidad destino</th><th>Placa</th><th>Ingreso</th><th>Salida</th></tr></thead><tbody id="tb-visitantes"><tr><td colspan="5">Cargando visitas…</td></tr></tbody></table></div>`,
+        paquetes: `<div class="card porteria-card table-responsive"><table class="data-table"><thead><tr><th>Transportadora</th><th>Unidad destino</th><th>Recibido</th><th>Estado</th></tr></thead><tbody id="tb-paquetes"><tr><td colspan="4">Cargando paquetes…</td></tr></tbody></table></div>`,
+        minuta: `<div class="card porteria-card table-responsive"><table class="data-table"><thead><tr><th>Fecha y hora</th><th>Registrado por</th><th>Asunto</th><th>Detalle</th></tr></thead><tbody id="tb-minuta"><tr><td colspan="4">Cargando novedades…</td></tr></tbody></table></div>`
+    };
+    document.getElementById('view-container').innerHTML = `<div class="view porteria-view"><div class="porteria-view-header"><div><p class="section-kicker">Portería y seguridad</p><h1 class="page-title"><i class="fa-solid ${iconos[viewName]}"></i> ${nombres[viewName]}</h1><p class="muted">${viewName === 'directorio' ? 'Consulta rápida de residentes y sus unidades.' : `Gestiona ${nombres[viewName].toLowerCase()} sin mezclar operaciones.`}</p></div>${acciones[viewName]}</div><nav class="porteria-tabs" aria-label="Operaciones de portería">${Object.entries(nombres).map(([clave, nombre]) => `<button type="button" class="${clave === viewName ? 'active' : ''}" onclick="loadView('${clave}')"><i class="fa-solid ${iconos[clave]}"></i><span>${nombre}</span></button>`).join('')}</nav>${contenido[viewName]}</div>`;
+    cargarSeccionPorteria(viewName);
+};
+
+async function cargarSeccionPorteria(seccion) {
+    try {
+        if (seccion === 'directorio') {
+            const response = await fetch('api/porteria.php?action=list_directorio');
+            const result = await response.json();
+            const tbody = document.getElementById('tb-directorio');
+            if (!tbody) return;
+            const registros = result.status === 'success' ? result.data : [];
+            tbody.innerHTML = registros.length ? registros.map(registro => `<tr><td>${escapeHtml(registro.torre)}</td><td><strong>${escapeHtml(registro.apartamento)}</strong></td><td>${escapeHtml(registro.nombre)}</td><td>${escapeHtml(registro.email || 'No registrado')}</td></tr>`).join('') : '<tr><td colspan="4">No hay residentes registrados.</td></tr>';
+            document.getElementById('busquedaDirectorio')?.addEventListener('input', event => {
+                const texto = event.target.value.toLowerCase().trim();
+                tbody.querySelectorAll('tr').forEach(fila => fila.classList.toggle('hidden', texto !== '' && !fila.textContent.toLowerCase().includes(texto)));
+            });
+            return;
+        }
+        const accion = seccion === 'visitas' ? 'list_visitantes' : seccion === 'paquetes' ? 'list_paquetes' : 'list_minuta';
+        const response = await fetch(`api/porteria.php?action=${accion}`);
+        const result = await response.json();
+        const registros = result.status === 'success' ? result.data : [];
+        if (seccion === 'visitas') {
+            const tbody = document.getElementById('tb-visitantes');
+            tbody.innerHTML = registros.length ? registros.map(visita => `<tr><td><strong>${escapeHtml(visita.nombre)}</strong><br><small>${escapeHtml(visita.documento || 'Sin documento')}</small></td><td>${escapeHtml(visita.torre || '')} · ${escapeHtml(visita.apartamento || visita.nomenclatura || '—')}</td><td>${escapeHtml(visita.vehiculo_placa || '—')}</td><td>${formatDate(visita.fecha_ingreso)}</td><td>${visita.fecha_salida ? formatDate(visita.fecha_salida) : `<button class="btn btn-primary porteria-table-action" onclick="window.cerrarVisita(${Number(visita.id)})">Marcar salida</button>`}</td></tr>`).join('') : '<tr><td colspan="5">No hay visitas registradas.</td></tr>';
+            await cargarUnidadesPorteria();
+        } else if (seccion === 'paquetes') {
+            const tbody = document.getElementById('tb-paquetes');
+            tbody.innerHTML = registros.length ? registros.map(paquete => `<tr><td><strong>${escapeHtml(paquete.transportadora)}</strong><br><small>${escapeHtml(paquete.descripcion || 'Sin descripción')}</small></td><td>${escapeHtml(paquete.torre || '')} · ${escapeHtml(paquete.apartamento || paquete.nomenclatura || '—')}</td><td>${formatDate(paquete.fecha_recepcion)}</td><td>${paquete.estado === 'pendiente' ? `<button class="btn btn-primary porteria-table-action" onclick="window.entregarPaquete(${Number(paquete.id)})">Entregar</button>` : '<span class="reserva-estado estado-aprobada">Entregado</span>'}</td></tr>`).join('') : '<tr><td colspan="4">No hay paquetes registrados.</td></tr>';
+            await cargarUnidadesPorteria();
+        } else {
+            const tbody = document.getElementById('tb-minuta');
+            tbody.innerHTML = registros.length ? registros.map(novedad => `<tr><td>${formatDateTime(novedad.fecha_operativa || novedad.fecha_registro)}</td><td>${escapeHtml(novedad.vigilante)}</td><td><strong>${escapeHtml(novedad.asunto)}</strong></td><td>${escapeHtml(novedad.novedad)}</td></tr>`).join('') : '<tr><td colspan="4">No hay novedades registradas.</td></tr>';
+        }
+    } catch (error) {
+        console.error('Error cargando operación de portería', error);
+    }
+}
+
+async function cargarUnidadesPorteria() {
+    const response = await fetch('api/porteria.php?action=list_inmuebles');
+    const result = await response.json();
+    opcionesUnidadesPorteria = result.status === 'success' ? result.data.map(unidad => `<option value="${Number(unidad.id)}">${escapeHtml([unidad.torre, unidad.nomenclatura || unidad.apartamento].filter(Boolean).join(' · '))}</option>`).join('') : '';
+}
+
+window.abrirFormularioPorteria = async function (tipo) {
+    if ((tipo === 'visita' || tipo === 'paquete') && !opcionesUnidadesPorteria) await cargarUnidadesPorteria();
+    let modal = document.getElementById('modalPorteriaSeparada');
+    if (!modal) { document.body.insertAdjacentHTML('beforeend', '<div id="modalPorteriaSeparada" class="login-modal hidden"></div>'); modal = document.getElementById('modalPorteriaSeparada'); }
+    const ahora = new Date();
+    const fechaLocal = new Date(ahora.getTime() - ahora.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const configuracion = {
+        visita: ['Registrar visita', `<label>Nombre del visitante<input name="nombre" required></label><label>Documento <small>(opcional)</small><input name="documento"></label><label>Placa <small>(opcional)</small><input name="vehiculo_placa"></label><label>Unidad visitada<select name="inmueble_id" required><option value="">Selecciona una unidad</option>${opcionesUnidadesPorteria}</select></label>`, 'registrar_visita'],
+        paquete: ['Recibir paquete', `<label>Unidad destino<select name="inmueble_id" required><option value="">Selecciona una unidad</option>${opcionesUnidadesPorteria}</select></label><label>Transportadora<input name="transportadora" required></label><label>Descripción <small>(opcional)</small><textarea name="descripcion" rows="3"></textarea></label>`, 'recibir_paquete'],
+        minuta: ['Registrar novedad', `<label>Fecha y hora de la novedad<input name="fecha_novedad" type="datetime-local" value="${fechaLocal}" required></label><label>Asunto<input name="asunto" maxlength="150" required></label><label>Detalle de la novedad<textarea name="novedad" rows="5" required></textarea></label>`, 'registrar_novedad']
+    }[tipo];
+    modal.innerHTML = `<div class="login-box porteria-modal-dialog"><button class="close-btn" type="button" onclick="document.getElementById('modalPorteriaSeparada').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button><h2>${configuracion[0]}</h2><form id="formPorteriaSeparada" class="porteria-form"><input type="hidden" name="action" value="${configuracion[2]}">${configuracion[1]}<button class="btn btn-primary" type="submit">Guardar</button></form></div>`;
+    modal.classList.remove('hidden');
+};
+
+document.addEventListener('submit', async event => {
+    if (event.target.id !== 'formPorteriaSeparada') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const response = await fetch('api/porteria.php', { method: 'POST', body: new FormData(event.target) });
+    const result = await response.json();
+    alert(result.message);
+    if (result.status === 'success') { document.getElementById('modalPorteriaSeparada')?.classList.add('hidden'); cargarSeccionPorteria(seccionPorteriaActual); }
+}, true);
+
+async function operarPorteriaSeparada(action, valores) {
+    const data = new FormData();
+    data.append('action', action);
+    Object.entries(valores).forEach(([clave, valor]) => data.append(clave, valor));
+    const response = await fetch('api/porteria.php', { method: 'POST', body: data });
+    const result = await response.json();
+    alert(result.message);
+    if (result.status === 'success') cargarSeccionPorteria(seccionPorteriaActual);
+}
+window.cerrarVisita = id => operarPorteriaSeparada('marcar_salida', { visitante_id: id });
+window.entregarPaquete = id => operarPorteriaSeparada('entregar_paquete', { paquete_id: id });
+
+const iniciarAppPorteriaSeparadaBase = initApp;
+initApp = function () {
+    iniciarAppPorteriaSeparadaBase();
+    if (currentUser?.rol === 'vigilante') {
+        ['directorio', 'visitas', 'paquetes', 'minuta', 'zonas'].forEach(vista => {
+            const enlace = document.querySelector(`.nav-links li[data-view="${vista}"]`);
+            if (enlace) enlace.style.display = 'flex';
+        });
+        document.querySelectorAll('.nav-links li').forEach(enlace => enlace.classList.toggle('active', enlace.dataset.view === 'directorio'));
+        loadView('directorio');
+    }
+};

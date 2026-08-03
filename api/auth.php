@@ -3,6 +3,13 @@ session_start();
 require_once 'config.php';
 header('Content-Type: application/json');
 
+function cerrarSesionDesactivada(): void
+{
+    $_SESSION = [];
+    session_destroy();
+    responseJSON('error', 'La cuenta ha sido desactivada');
+}
+
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 if ($action === 'login') {
@@ -10,7 +17,7 @@ if ($action === 'login') {
     $password = $_POST['password'] ?? '';
     if ($email === '' || $password === '') responseJSON('error', 'Faltan credenciales');
 
-    $stmt = $pdo->prepare('SELECT * FROM usuarios WHERE email = ? LIMIT 1');
+    $stmt = $pdo->prepare('SELECT * FROM usuarios WHERE email = ? AND activo = 1 LIMIT 1');
     $stmt->execute([$email]);
     $user = $stmt->fetch();
     if (!$user || !password_verify($password, $user['password_hash'])) responseJSON('error', 'Credenciales inválidas');
@@ -28,24 +35,32 @@ if ($action === 'logout') {
 }
 
 if ($action === 'check') {
-    if (!isset($_SESSION['user_id'])) responseJSON('error', 'No autenticado');
-    responseJSON('success', 'Autenticado', ['id' => $_SESSION['user_id'], 'rol' => $_SESSION['user_rol'], 'nombre' => $_SESSION['user_nombre'], 'conjunto_id' => $_SESSION['conjunto_id']]);
+    if (!isset($_SESSION['user_id'], $_SESSION['conjunto_id'])) responseJSON('error', 'No autenticado');
+    $stmt = $pdo->prepare('SELECT id, rol, nombre, conjunto_id, activo FROM usuarios WHERE id = ? AND conjunto_id = ? LIMIT 1');
+    $stmt->execute([$_SESSION['user_id'], $_SESSION['conjunto_id']]);
+    $user = $stmt->fetch();
+    if (!$user || (int) $user['activo'] !== 1) cerrarSesionDesactivada();
+    $_SESSION['user_rol'] = $user['rol'];
+    $_SESSION['user_nombre'] = $user['nombre'];
+    responseJSON('success', 'Autenticado', ['id' => $user['id'], 'rol' => $user['rol'], 'nombre' => $user['nombre'], 'conjunto_id' => $user['conjunto_id']]);
 }
 
 if ($action === 'cambiar_password') {
-    if (!isset($_SESSION['user_id'])) responseJSON('error', 'No autorizado');
+    if (!isset($_SESSION['user_id'], $_SESSION['conjunto_id'])) responseJSON('error', 'No autorizado');
     $actual = $_POST['password_actual'] ?? '';
     $nueva = $_POST['password_nueva'] ?? '';
     $confirmacion = $_POST['password_confirmacion'] ?? '';
+    $stmt = $pdo->prepare('SELECT password_hash, activo FROM usuarios WHERE id = ? AND conjunto_id = ? LIMIT 1');
+    $stmt->execute([$_SESSION['user_id'], $_SESSION['conjunto_id']]);
+    $user = $stmt->fetch();
+    if (!$user || (int) $user['activo'] !== 1) cerrarSesionDesactivada();
     if ($actual === '' || $nueva === '' || $confirmacion === '') responseJSON('error', 'Completa todos los campos');
     if (strlen($nueva) < 8) responseJSON('error', 'La nueva contraseña debe tener al menos 8 caracteres');
     if (!hash_equals($nueva, $confirmacion)) responseJSON('error', 'La confirmación no coincide');
-    $stmt = $pdo->prepare('SELECT password_hash FROM usuarios WHERE id = ? AND conjunto_id = ?');
-    $stmt->execute([$_SESSION['user_id'], $_SESSION['conjunto_id']]);
-    $user = $stmt->fetch();
-    if (!$user || !password_verify($actual, $user['password_hash'])) responseJSON('error', 'La contraseña actual es incorrecta');
-    $stmt = $pdo->prepare('UPDATE usuarios SET password_hash = ? WHERE id = ? AND conjunto_id = ?');
+    if (!password_verify($actual, $user['password_hash'])) responseJSON('error', 'La contraseña actual es incorrecta');
+    $stmt = $pdo->prepare('UPDATE usuarios SET password_hash = ? WHERE id = ? AND conjunto_id = ? AND activo = 1');
     $stmt->execute([password_hash($nueva, PASSWORD_DEFAULT), $_SESSION['user_id'], $_SESSION['conjunto_id']]);
+    if ($stmt->rowCount() !== 1) cerrarSesionDesactivada();
     responseJSON('success', 'Contraseña actualizada correctamente');
 }
 
