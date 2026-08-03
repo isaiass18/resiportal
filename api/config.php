@@ -1,8 +1,8 @@
 <?php
 // Configuración de la base de datos
 define('DB_HOST', 'localhost'); // En IONOS suele ser localhost o la ip del servidor db
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_USER', 'resi_admin');
+define('DB_PASS', 'ResiPassword2026!');
 define('DB_NAME', 'conjunto_residencial');
 
 try {
