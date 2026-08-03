@@ -345,6 +345,8 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 32px 0; }
     font-family: inherit;
 }
 .mapping-item select:focus {
+    border-color: var(--primary);
+}
 
 /* Login & Data Tables */
 .login-overlay {
