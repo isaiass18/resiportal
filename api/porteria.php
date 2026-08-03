@@ -31,8 +31,8 @@ if ($action === 'list_paquetes') {
     responseJSON('success', '', $stmt->fetchAll());
 }
 if ($action === 'list_directorio') {
-    $stmt = $pdo->prepare("SELECT DISTINCT u.id, u.nombre, u.email, COALESCE(i.torre, 'N/A') AS torre, COALESCE(i.apartamento, i.nomenclatura, 'N/A') AS apartamento FROM usuarios u LEFT JOIN relacion_inmuebles_usuarios r ON r.usuario_id = u.id LEFT JOIN inmuebles i ON i.id = r.inmueble_id WHERE u.rol IN ('residente', 'propietario') AND u.conjunto_id = ? ORDER BY apartamento, u.nombre");
-    $stmt->execute([$conjuntoId]);
+    $stmt = $pdo->prepare("SELECT r.id AS relacion_id, u.id, u.nombre, u.email, u.contacto, r.tipo_relacion, CASE WHEN u.password_hash IS NULL OR u.password_hash = '' THEN 0 ELSE 1 END AS tiene_cuenta, COALESCE(i.torre, 'N/A') AS torre, COALESCE(i.apartamento, i.nomenclatura, 'N/A') AS apartamento FROM relacion_inmuebles_usuarios r JOIN usuarios u ON u.id = r.usuario_id AND u.conjunto_id = ? JOIN inmuebles i ON i.id = r.inmueble_id AND i.conjunto_id = ? WHERE r.tipo_relacion IN ('residente', 'propietario') ORDER BY i.torre, i.nomenclatura, u.nombre");
+    $stmt->execute([$conjuntoId, $conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
 }
 

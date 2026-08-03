@@ -32,9 +32,27 @@ function datosUsuario(): array
 function validarUsuario(array $datos, array $rolesPermitidos): void
 {
     [$documento, $nombre, $email, $rol] = $datos;
-    if ($documento === '' || $nombre === '' || $email === '' || $rol === '') responseJSON('error', 'Documento, nombre, correo y rol son obligatorios');
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) responseJSON('error', 'El correo no es válido');
+    if ($documento === '' || $nombre === '' || $rol === '') responseJSON('error', 'Documento, nombre y rol son obligatorios');
+    if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) responseJSON('error', 'El correo no es válido');
+    if (in_array($rol, ['admin', 'vigilante'], true) && $email === '') responseJSON('error', 'El correo es obligatorio para administradores y vigilantes');
     if (!in_array($rol, $rolesPermitidos, true)) responseJSON('error', 'Rol no permitido');
+}
+
+function validarInmuebleUsuario(PDO $pdo, int $inmuebleId, int $conjuntoId): void
+{
+    if ($inmuebleId <= 0) responseJSON('error', 'Selecciona el apartamento o casa asociado');
+    $stmt = $pdo->prepare('SELECT id FROM inmuebles WHERE id = ? AND conjunto_id = ?');
+    $stmt->execute([$inmuebleId, $conjuntoId]);
+    if (!$stmt->fetch()) responseJSON('error', 'El apartamento o casa no pertenece a este conjunto');
+}
+
+function vincularUsuarioInmueble(PDO $pdo, int $usuarioId, int $inmuebleId, string $tipoRelacion): void
+{
+    $existe = $pdo->prepare('SELECT id FROM relacion_inmuebles_usuarios WHERE usuario_id = ? AND inmueble_id = ? AND tipo_relacion = ? LIMIT 1');
+    $existe->execute([$usuarioId, $inmuebleId, $tipoRelacion]);
+    if (!$existe->fetch()) {
+        $pdo->prepare('INSERT INTO relacion_inmuebles_usuarios (usuario_id, inmueble_id, tipo_relacion) VALUES (?, ?, ?)')->execute([$usuarioId, $inmuebleId, $tipoRelacion]);
+    }
 }
 
 function guardarFotoVigilante(array $file, int $conjuntoId): string
@@ -52,7 +70,7 @@ function guardarFotoVigilante(array $file, int $conjuntoId): string
 }
 
 if ($action === 'list') {
-    $stmt = $pdo->prepare('SELECT id, rol, documento, nombre, email, activo, desactivado_en, desactivado_por, motivo_desactivacion FROM usuarios WHERE conjunto_id = ? ORDER BY nombre');
+    $stmt = $pdo->prepare("SELECT u.id, u.rol, u.documento, u.nombre, u.email, u.contacto, u.activo, u.desactivado_en, u.desactivado_por, u.motivo_desactivacion, CASE WHEN u.password_hash IS NULL OR u.password_hash = '' THEN 0 ELSE 1 END AS tiene_cuenta, MIN(r.inmueble_id) AS inmueble_id, GROUP_CONCAT(DISTINCT CONCAT(COALESCE(i.torre, ''), ' ', COALESCE(i.nomenclatura, i.apartamento, '')) ORDER BY i.torre, i.nomenclatura SEPARATOR ' · ') AS inmuebles FROM usuarios u LEFT JOIN relacion_inmuebles_usuarios r ON r.usuario_id = u.id LEFT JOIN inmuebles i ON i.id = r.inmueble_id AND i.conjunto_id = u.conjunto_id WHERE u.conjunto_id = ? GROUP BY u.id, u.rol, u.documento, u.nombre, u.email, u.contacto, u.activo, u.desactivado_en, u.desactivado_por, u.motivo_desactivacion, u.password_hash ORDER BY u.nombre");
     $stmt->execute([$conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
 }
@@ -184,27 +202,62 @@ if ($action === 'crear_usuario' || $action === 'update') {
     validarUsuario([$documento, $nombre, $email, $rol], $rolesPermitidos);
     $password = $_POST['password'] ?? '';
     $id = (int) ($_POST['id'] ?? 0);
-    if ($action === 'crear_usuario') {
-        if (strlen($password) < 8) responseJSON('error', 'La contraseña debe tener mínimo 8 caracteres');
-        $stmt = $pdo->prepare('SELECT id FROM usuarios WHERE conjunto_id = ? AND (documento = ? OR email = ?) LIMIT 1');
-        $stmt->execute([$conjuntoId, $documento, $email]);
-        if ($stmt->fetch()) responseJSON('error', 'Documento o correo ya existe en este conjunto');
-        $stmt = $pdo->prepare('INSERT INTO usuarios (conjunto_id, rol, documento, nombre, email, password_hash) VALUES (?, ?, ?, ?, ?, ?)');
-        $stmt->execute([$conjuntoId, $rol, $documento, $nombre, $email, password_hash($password, PASSWORD_DEFAULT)]);
-        responseJSON('success', 'Usuario registrado correctamente');
-    }
-    if ($id <= 0) responseJSON('error', 'Usuario inválido');
-    $stmt = $pdo->prepare('SELECT id FROM usuarios WHERE id = ? AND conjunto_id = ?');
-    $stmt->execute([$id, $conjuntoId]);
-    if (!$stmt->fetch()) responseJSON('error', 'Usuario no encontrado');
-    $stmt = $pdo->prepare('SELECT id FROM usuarios WHERE conjunto_id = ? AND (documento = ? OR email = ?) AND id <> ? LIMIT 1');
-    $stmt->execute([$conjuntoId, $documento, $email, $id]);
-    if ($stmt->fetch()) responseJSON('error', 'Documento o correo ya existe en este conjunto');
+    $inmuebleId = (int) ($_POST['inmueble_id'] ?? 0);
+    $sinAcceso = filter_var($_POST['sin_acceso'] ?? false, FILTER_VALIDATE_BOOLEAN);
+    if (in_array($rol, ['admin', 'vigilante'], true)) $sinAcceso = false;
+    $requiereInmueble = in_array($rol, ['residente', 'propietario'], true);
+    $requiereAcceso = !$sinAcceso;
+    if ($requiereInmueble) validarInmuebleUsuario($pdo, $inmuebleId, $conjuntoId);
+    if ($action === 'crear_usuario' && $requiereAcceso && strlen($password) < 8) responseJSON('error', 'La contraseña debe tener mínimo 8 caracteres cuando se crea una cuenta de acceso');
     if ($password !== '' && strlen($password) < 8) responseJSON('error', 'La contraseña debe tener mínimo 8 caracteres');
-    $sql = $password === '' ? 'UPDATE usuarios SET rol = ?, documento = ?, nombre = ?, email = ? WHERE id = ? AND conjunto_id = ?' : 'UPDATE usuarios SET rol = ?, documento = ?, nombre = ?, email = ?, password_hash = ? WHERE id = ? AND conjunto_id = ?';
-    $valores = $password === '' ? [$rol, $documento, $nombre, $email, $id, $conjuntoId] : [$rol, $documento, $nombre, $email, password_hash($password, PASSWORD_DEFAULT), $id, $conjuntoId];
-    $pdo->prepare($sql)->execute($valores);
-    responseJSON('success', 'Usuario actualizado correctamente');
+
+    try {
+        $pdo->beginTransaction();
+        if ($action === 'crear_usuario') {
+            $duplicado = $pdo->prepare('SELECT id FROM usuarios WHERE conjunto_id = ? AND (documento = ? OR (? <> "" AND email = ?)) LIMIT 1');
+            $duplicado->execute([$conjuntoId, $documento, $email, $email]);
+            if ($duplicado->fetch()) throw new Exception('Documento o correo ya existe en este conjunto');
+            $hash = $sinAcceso ? null : password_hash($password, PASSWORD_DEFAULT);
+            $stmt = $pdo->prepare('INSERT INTO usuarios (conjunto_id, rol, documento, nombre, email, password_hash) VALUES (?, ?, ?, ?, NULLIF(?, ""), ?)');
+            $stmt->execute([$conjuntoId, $rol, $documento, $nombre, $email, $hash]);
+            $id = (int) $pdo->lastInsertId();
+            if ($requiereInmueble) vincularUsuarioInmueble($pdo, $id, $inmuebleId, $rol);
+            $pdo->commit();
+            responseJSON('success', $sinAcceso ? 'Persona registrada y enlazada al inmueble sin acceso al portal' : 'Usuario registrado y enlazado correctamente');
+        }
+
+        if ($id <= 0) throw new Exception('Usuario inválido');
+        $actual = $pdo->prepare('SELECT id, rol FROM usuarios WHERE id = ? AND conjunto_id = ? FOR UPDATE');
+        $actual->execute([$id, $conjuntoId]);
+        $usuarioActual = $actual->fetch();
+        if (!$usuarioActual) throw new Exception('Usuario no encontrado');
+        if ($usuarioActual['rol'] === 'admin' && $rol !== 'admin') {
+            $administradores = $pdo->prepare("SELECT id FROM usuarios WHERE conjunto_id = ? AND rol = 'admin' AND activo = 1 FOR UPDATE");
+            $administradores->execute([$conjuntoId]);
+            if (count($administradores->fetchAll()) <= 1) throw new Exception('No se puede cambiar el rol del último administrador activo');
+        }
+        $duplicado = $pdo->prepare('SELECT id FROM usuarios WHERE conjunto_id = ? AND (documento = ? OR (? <> "" AND email = ?)) AND id <> ? LIMIT 1');
+        $duplicado->execute([$conjuntoId, $documento, $email, $email, $id]);
+        if ($duplicado->fetch()) throw new Exception('Documento o correo ya existe en este conjunto');
+        $hash = $sinAcceso ? null : ($password !== '' ? password_hash($password, PASSWORD_DEFAULT) : null);
+        if ($sinAcceso) {
+            $sql = 'UPDATE usuarios SET rol = ?, documento = ?, nombre = ?, email = NULLIF(?, ""), password_hash = NULL WHERE id = ? AND conjunto_id = ?';
+            $valores = [$rol, $documento, $nombre, $email, $id, $conjuntoId];
+        } elseif ($password !== '') {
+            $sql = 'UPDATE usuarios SET rol = ?, documento = ?, nombre = ?, email = NULLIF(?, ""), password_hash = ? WHERE id = ? AND conjunto_id = ?';
+            $valores = [$rol, $documento, $nombre, $email, $hash, $id, $conjuntoId];
+        } else {
+            $sql = 'UPDATE usuarios SET rol = ?, documento = ?, nombre = ?, email = NULLIF(?, "") WHERE id = ? AND conjunto_id = ?';
+            $valores = [$rol, $documento, $nombre, $email, $id, $conjuntoId];
+        }
+        $pdo->prepare($sql)->execute($valores);
+        if ($requiereInmueble) vincularUsuarioInmueble($pdo, $id, $inmuebleId, $rol);
+        $pdo->commit();
+        responseJSON('success', 'Usuario actualizado correctamente');
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        responseJSON('error', $e->getMessage());
+    }
 }
 
 responseJSON('error', 'Acción no válida');

@@ -3,6 +3,12 @@
 session_start();
 require_once 'config.php';
 header('Content-Type: application/json');
+ini_set('display_errors', '0');
+libxml_use_internal_errors(true);
+set_error_handler(static function (int $severity, string $message, string $file, int $line): bool {
+    if (!(error_reporting() & $severity)) return false;
+    throw new ErrorException($message, 0, $severity, $file, $line);
+});
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['user_rol'] ?? '') !== 'admin') responseJSON('error', 'No autorizado');
 
@@ -20,6 +26,7 @@ function configuracionImportacion(string $tipo): ?array
 function filasXlsx(string $ruta): array
 {
     if (!class_exists('ZipArchive')) responseJSON('error', 'El servidor no tiene habilitada la extensión ZIP requerida para XLSX');
+    if (!class_exists('SimpleXMLElement')) responseJSON('error', 'El servidor no tiene habilitada la extensión XML requerida para XLSX');
     $zip = new ZipArchive();
     if ($zip->open($ruta) !== true) responseJSON('error', 'El archivo XLSX no es un archivo ZIP válido');
     $shared = [];
@@ -197,39 +204,44 @@ function importarParqueadero(PDO $pdo, int $conjuntoId, int $usuarioId, array $f
     $pdo->prepare("UPDATE parqueaderos SET estado = 'asignado' WHERE id = ?")->execute([$parqueaderoId]);
 }
 
-$action = $_POST['action'] ?? '';
-$tipo = $_POST['tipo'] ?? '';
-if (!configuracionImportacion($tipo)) responseJSON('error', 'Selecciona qué información deseas importar');
-
-if ($action === 'get_headers') {
-    [$headers, $rows] = archivoXlsx();
-    responseJSON('success', 'Cabeceras leídas', ['headers' => $headers, 'rows' => count($rows)]);
-}
-
-$mapeo = json_decode($_POST['mapping'] ?? '', true);
-if (!is_array($mapeo)) responseJSON('error', 'Mapeo de columnas inválido');
-[$config, $headers, $validas, $errores] = prepararFilas($tipo, $mapeo);
-
-if ($action === 'preview') {
-    responseJSON('success', 'Vista previa generada', ['summary' => ['validas' => count($validas), 'errores' => count($errores)], 'sample' => array_slice($validas, 0, 10), 'errors' => array_slice($errores, 0, 30)]);
-}
-
-if ($action !== 'process') responseJSON('error', 'Acción no válida');
-if ($errores) responseJSON('error', 'Corrige los errores de la vista previa antes de importar', ['errors' => array_slice($errores, 0, 30)]);
-
-$conjuntoId = (int) $_SESSION['conjunto_id'];
-$usuarioId = (int) $_SESSION['user_id'];
 try {
-    $pdo->beginTransaction();
-    foreach ($validas as $fila) {
-        if ($tipo === 'residentes' || $tipo === 'propietarios') importarUsuario($pdo, $conjuntoId, $fila, $config['relacion']);
-        elseif ($tipo === 'inmuebles') importarInmueble($pdo, $conjuntoId, $fila);
-        else importarParqueadero($pdo, $conjuntoId, $usuarioId, $fila);
+    $action = $_POST['action'] ?? '';
+    $tipo = $_POST['tipo'] ?? '';
+    if (!configuracionImportacion($tipo)) responseJSON('error', 'Selecciona qué información deseas importar');
+
+    if ($action === 'get_headers') {
+        [$headers, $rows] = archivoXlsx();
+        responseJSON('success', 'Cabeceras leídas', ['headers' => $headers, 'rows' => count($rows)]);
     }
-    $pdo->prepare('INSERT INTO auditoria_logs (usuario_id, accion, entidad, detalles) VALUES (?, "importar", ?, ?)')->execute([$usuarioId, $config['etiqueta'], 'Filas procesadas: ' . count($validas)]);
-    $pdo->commit();
-    responseJSON('success', 'Importación completada: ' . count($validas) . ' fila(s) de ' . $config['etiqueta'] . ' procesadas.');
+
+    $mapeo = json_decode($_POST['mapping'] ?? '', true);
+    if (!is_array($mapeo)) responseJSON('error', 'Mapeo de columnas inválido');
+    [$config, $headers, $validas, $errores] = prepararFilas($tipo, $mapeo);
+
+    if ($action === 'preview') {
+        responseJSON('success', 'Vista previa generada', ['summary' => ['validas' => count($validas), 'errores' => count($errores)], 'sample' => array_slice($validas, 0, 10), 'errors' => array_slice($errores, 0, 30)]);
+    }
+
+    if ($action !== 'process') responseJSON('error', 'Acción no válida');
+    if ($errores) responseJSON('error', 'Corrige los errores de la vista previa antes de importar', ['errors' => array_slice($errores, 0, 30)]);
+
+    $conjuntoId = (int) $_SESSION['conjunto_id'];
+    $usuarioId = (int) $_SESSION['user_id'];
+    try {
+        $pdo->beginTransaction();
+        foreach ($validas as $fila) {
+            if ($tipo === 'residentes' || $tipo === 'propietarios') importarUsuario($pdo, $conjuntoId, $fila, $config['relacion']);
+            elseif ($tipo === 'inmuebles') importarInmueble($pdo, $conjuntoId, $fila);
+            else importarParqueadero($pdo, $conjuntoId, $usuarioId, $fila);
+        }
+        $pdo->prepare('INSERT INTO auditoria_logs (usuario_id, accion, entidad, detalles) VALUES (?, "importar", ?, ?)')->execute([$usuarioId, $config['etiqueta'], 'Filas procesadas: ' . count($validas)]);
+        $pdo->commit();
+        responseJSON('success', 'Importación completada: ' . count($validas) . ' fila(s) de ' . $config['etiqueta'] . ' procesadas.');
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        responseJSON('error', 'No se importó ningún dato: ' . $e->getMessage());
+    }
 } catch (Throwable $e) {
-    if ($pdo->inTransaction()) $pdo->rollBack();
-    responseJSON('error', 'No se importó ningún dato: ' . $e->getMessage());
+    error_log('ResiPortal importación: ' . $e->getMessage());
+    responseJSON('error', 'No fue posible leer el XLSX: ' . $e->getMessage());
 }

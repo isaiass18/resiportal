@@ -315,40 +315,42 @@ function initApp() {
 }
 
 function setupNavigation() {
-    const navLinks = document.querySelectorAll('.nav-links li');
+    const navLinks = [...document.querySelectorAll('.nav-links li[data-view]')];
+    const submenuVigilancia = document.querySelector('.nav-admin-vigilancia');
+    const toggleVigilancia = submenuVigilancia?.querySelector('.nav-submenu-toggle');
+    const role = currentUser?.rol;
+    const allowedForVigilante = ['porteria', 'zonas', 'perfil'];
+    const allowedForResident = ['home-residente', 'mis-pagos', 'zonas', 'reclamaciones', 'perfil'];
+
     navLinks.forEach(link => {
-        const viewName = link.getAttribute('data-view');
-
-        // Hide/Show links based on role
-        if (currentUser.rol === 'vigilante') {
-            if (viewName !== 'porteria' && viewName !== 'perfil') {
-                link.style.display = 'none';
-            } else if (viewName === 'porteria') {
-                link.classList.add('active');
-            }
-        } else if (currentUser.rol === 'residente') {
-            const allowed = ['home-residente', 'mis-pagos', 'zonas', 'reclamaciones', 'perfil'];
-            if (!allowed.includes(viewName)) {
-                link.style.display = 'none';
-            }
-        } else {
-            // Admin sees all except resident specific views
-            if (['home-residente', 'mis-pagos'].includes(viewName)) {
-                link.style.display = 'none';
-            }
-        }
-
-        link.addEventListener('click', (e) => {
-            navLinks.forEach(l => l.classList.remove('active'));
-            e.currentTarget.classList.add('active');
+        const viewName = link.dataset.view;
+        const visible = role === 'vigilante'
+            ? allowedForVigilante.includes(viewName)
+            : role === 'residente'
+                ? allowedForResident.includes(viewName)
+                : !['home-residente', 'mis-pagos', 'porteria'].includes(viewName);
+        link.style.display = visible ? 'flex' : 'none';
+        link.addEventListener('click', event => {
+            navLinks.forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            submenuVigilancia?.classList.toggle('has-active-child', submenuVigilancia.contains(event.currentTarget));
             loadView(viewName);
-
-            // Close sidebar on mobile after clicking
-            if (window.innerWidth <= 768) {
-                document.getElementById('sidebar').classList.remove('open');
-            }
+            if (window.innerWidth <= 768) document.getElementById('sidebar')?.classList.remove('open');
         });
     });
+
+    if (submenuVigilancia) {
+        const showSubmenu = role === 'admin';
+        submenuVigilancia.style.display = showSubmenu ? 'block' : 'none';
+        if (showSubmenu) {
+            submenuVigilancia.classList.remove('is-collapsed');
+            toggleVigilancia?.addEventListener('click', event => {
+                event.stopPropagation();
+                const collapsed = submenuVigilancia.classList.toggle('is-collapsed');
+                toggleVigilancia.setAttribute('aria-expanded', String(!collapsed));
+            });
+        }
+    }
 }
 
 function loadView(viewName) {
@@ -2443,7 +2445,7 @@ async function cargarSeccionPorteria(seccion) {
             const tbody = document.getElementById('tb-directorio');
             if (!tbody) return;
             const registros = result.status === 'success' ? result.data : [];
-            tbody.innerHTML = registros.length ? registros.map(registro => `<tr><td>${escapeHtml(registro.torre)}</td><td><strong>${escapeHtml(registro.apartamento)}</strong></td><td>${escapeHtml(registro.nombre)}</td><td>${escapeHtml(registro.email || 'No registrado')}</td></tr>`).join('') : '<tr><td colspan="4">No hay residentes registrados.</td></tr>';
+            tbody.innerHTML = registros.length ? registros.map(registro => `<tr><td>${escapeHtml(registro.torre)}</td><td><strong>${escapeHtml(registro.apartamento)}</strong></td><td>${escapeHtml(registro.nombre)}</td><td>${escapeHtml(registro.contacto || registro.email || 'No registrado')}</td></tr>`).join('') : '<tr><td colspan="4">No hay residentes registrados.</td></tr>';
             document.getElementById('busquedaDirectorio')?.addEventListener('input', event => {
                 const texto = event.target.value.toLowerCase().trim();
                 tbody.querySelectorAll('tr').forEach(fila => fila.classList.toggle('hidden', texto !== '' && !fila.textContent.toLowerCase().includes(texto)));
@@ -2518,12 +2520,17 @@ const iniciarAppPorteriaSeparadaBase = initApp;
 initApp = function () {
     iniciarAppPorteriaSeparadaBase();
     if (currentUser?.rol === 'vigilante') {
-        ['directorio', 'visitas', 'paquetes', 'minuta', 'zonas'].forEach(vista => {
+        ['porteria', 'zonas', 'perfil'].forEach(vista => {
             const enlace = document.querySelector(`.nav-links li[data-view="${vista}"]`);
             if (enlace) enlace.style.display = 'flex';
         });
-        document.querySelectorAll('.nav-links li').forEach(enlace => enlace.classList.toggle('active', enlace.dataset.view === 'directorio'));
-        loadView('directorio');
+        document.querySelector('.nav-admin-vigilancia').style.display = 'none';
+        ['directorio', 'visitas', 'paquetes', 'minuta'].forEach(vista => {
+            const enlace = document.querySelector(`.nav-links li[data-view="${vista}"]`);
+            if (enlace) enlace.style.display = 'none';
+        });
+        document.querySelectorAll('.nav-links li[data-view]').forEach(enlace => enlace.classList.toggle('active', enlace.dataset.view === 'porteria'));
+        loadView('porteria');
     }
 };
 
@@ -3087,12 +3094,12 @@ window.initImportView = function () {
     const enviar = async accion => {
         const archivo = input.files[0]; if (!archivo) return window.notificar('Selecciona el archivo XLSX primero.', 'warning');
         const datos = new FormData(); datos.append('action', accion); datos.append('tipo', tipoSeleccionado()); datos.append('mapping', JSON.stringify(mapeo())); datos.append('file', archivo);
-        const respuesta = await fetch('api/import.php', { method: 'POST', body: datos }); return respuesta.json();
+        const respuesta = await fetch('api/import.php', { method: 'POST', body: datos }); return leerRespuestaImportacion(respuesta);
     };
     input.onchange = async () => {
         const archivo = input.files[0]; if (!archivo) return;
         const datos = new FormData(); datos.append('action', 'get_headers'); datos.append('tipo', tipoSeleccionado()); datos.append('file', archivo);
-        const respuesta = await fetch('api/import.php', { method: 'POST', body: datos }); const resultado = await respuesta.json();
+        const respuesta = await fetch('api/import.php', { method: 'POST', body: datos }); const resultado = await leerRespuestaImportacion(respuesta);
         if (resultado.status !== 'success') return window.notificar(resultado.message, 'error');
         headers = resultado.data.headers; listoParaImportar = false;
         formulario.innerHTML = tipos[tipoSeleccionado()].campos.map(([campo, etiqueta]) => `<div class="mapping-item"><label>${etiqueta}</label><select name="map_${campo}">${opciones(campo)}</select></div>`).join('');
@@ -3148,4 +3155,644 @@ const cargarVistaConFormatoMoneda = window.loadView;
 window.loadView = function (vista) {
     cargarVistaConFormatoMoneda(vista);
     window.setTimeout(() => prepararCamposMoneda(document), 0);
+};
+
+
+/* Ajustes finales de operación: cuota visible, horas AM/PM y disponibilidad real por franja. */
+function formatearHoraAMPM(valor) {
+    const minutos = minutosHora(valor);
+    if (minutos === null) return '—';
+    const hora24 = Math.floor(minutos / 60);
+    const minuto = String(minutos % 60).padStart(2, '0');
+    const meridiano = hora24 >= 12 ? 'PM' : 'AM';
+    return `${hora24 % 12 || 12}:${minuto} ${meridiano}`;
+}
+
+function formatearHorarioServicio(valor) {
+    const horario = typeof valor === 'object' && valor?.apertura ? valor : horarioServicioZona({ horarios: valor });
+    return horario ? `${formatearHoraAMPM(horario.apertura)} – ${formatearHoraAMPM(horario.cierre)}` : 'No definido';
+}
+
+function etiquetaHorarioReserva(reserva) {
+    const inicio = horaCorta(reserva.hora_inicio);
+    const fin = horaCorta(reserva.hora_fin);
+    return inicio && fin ? `${formatearHoraAMPM(inicio)} – ${formatearHoraAMPM(fin)}` : 'Bloque histórico: día completo';
+}
+
+function fechaSiguiente(fecha) {
+    const resultado = new Date(`${fecha}T00:00:00`);
+    resultado.setDate(resultado.getDate() + 1);
+    return fechaLocal(resultado);
+}
+
+function eventoReserva(reserva, interno = false) {
+    const historica = !reserva.hora_inicio || !reserva.hora_fin;
+    const titulo = interno
+        ? `${reserva.inmueble_etiqueta || 'Inmueble no asignado'} · ${etiquetaHorarioReserva(reserva)}`
+        : (historica ? 'No disponible: día completo' : reserva.estado === 'aprobada' ? 'No disponible' : 'Solicitud pendiente');
+    return {
+        id: String(reserva.id || ''),
+        title: titulo,
+        start: historica ? `${reserva.fecha_reserva}T00:00:00` : `${reserva.fecha_reserva}T${horaCorta(reserva.hora_inicio)}`,
+        end: historica ? `${fechaSiguiente(reserva.fecha_reserva)}T00:00:00` : `${reserva.fecha_reserva}T${horaCorta(reserva.hora_fin)}`,
+        allDay: false,
+        extendedProps: { reservaHistorica: historica },
+        classNames: [reserva.estado === 'aprobada' ? 'zona-calendar-reserva' : 'zona-calendar-pendiente']
+    };
+}
+
+function contenidoEventoReserva(argumento) {
+    const evento = argumento.event;
+    const esHistorica = Boolean(evento.extendedProps.reservaHistorica);
+    const horario = esHistorica ? 'Día completo' : `${formatearHoraAMPM(evento.start)} – ${formatearHoraAMPM(evento.end)}`;
+    return {
+        html: `<span class="zona-event-time">${escapeHtml(horario)}</span><span class="zona-event-title">${escapeHtml(evento.title || '')}</span>`
+    };
+}
+
+function eventosFondoHorario() {
+    // La clase de cada celda es la única capa de disponibilidad: evita que un evento recurrente cubra horas cerradas.
+    return [];
+}
+
+function opcionesCalendarioHorario(zona) {
+    const horario = horarioServicioZona(zona);
+    return {
+        slotMinTime: '00:00:00',
+        slotMaxTime: '24:00:00',
+        slotDuration: '00:30:00',
+        slotLabelInterval: { hours: 1 },
+        allDaySlot: false,
+        businessHours: false,
+        slotLaneClassNames: info => momentoEnHorarioServicio(info.date, horario) ? ['zona-slot-disponible'] : ['zona-slot-cerrado'],
+        slotLabelContent: info => ({ html: formatearHoraAMPM(info.date) }),
+        eventTimeFormat: { hour: 'numeric', minute: '2-digit', hour12: true },
+        eventContent: contenidoEventoReserva
+    };
+}
+
+function opcionesCalendarioSoloReservas() {
+    return {
+        slotMinTime: '00:00:00',
+        slotMaxTime: '24:00:00',
+        slotDuration: '00:30:00',
+        slotLabelInterval: { hours: 1 },
+        allDaySlot: false,
+        businessHours: false,
+        slotLabelContent: info => ({ html: formatearHoraAMPM(info.date) }),
+        eventTimeFormat: { hour: 'numeric', minute: '2-digit', hour12: true },
+        eventContent: contenidoEventoReserva
+    };
+}
+
+function opcionesHorasAMPM(valorActual = '') {
+    const opciones = ['<option value="">Selecciona una hora…</option>'];
+    for (let minutos = 0; minutos < 1440; minutos += 15) {
+        const valor = `${String(Math.floor(minutos / 60)).padStart(2, '0')}:${String(minutos % 60).padStart(2, '0')}`;
+        opciones.push(`<option value="${valor}">${formatearHoraAMPM(valor)}</option>`);
+    }
+    const normalizado = horaCorta(valorActual);
+    if (normalizado && !opciones.some(opcion => opcion.includes(`value="${normalizado}"`))) opciones.push(`<option value="${normalizado}">${formatearHoraAMPM(normalizado)}</option>`);
+    return opciones.join('');
+}
+
+function convertirControlHoraAMPM(control) {
+    if (!control) return null;
+    const valor = horaCorta(control.value);
+    if (control.tagName === 'SELECT') {
+        control.innerHTML = opcionesHorasAMPM(valor);
+        control.value = valor;
+        return control;
+    }
+    const selector = document.createElement('select');
+    [...control.attributes].forEach(atributo => {
+        if (atributo.name !== 'type' && atributo.name !== 'value') selector.setAttribute(atributo.name, atributo.value);
+    });
+    selector.classList.add('time-ampm-select');
+    selector.innerHTML = opcionesHorasAMPM(valor);
+    selector.value = valor;
+    control.replaceWith(selector);
+    return selector;
+}
+
+function prepararSelectoresHoraAMPM(contexto = document) {
+    ['zonaHoraApertura', 'zonaHoraCierre', 'reservaHoraInicio', 'reservaHoraFin'].forEach(id => convertirControlHoraAMPM(contexto.querySelector?.(`#${id}`)));
+    contexto.querySelectorAll?.('input[type="time"][name="hora_inicio"], input[type="time"][name="hora_fin"], select.time-ampm-select[name="hora_inicio"], select.time-ampm-select[name="hora_fin"]').forEach(convertirControlHoraAMPM);
+}
+
+function actualizarHorariosVisibles() {
+    const zonasPorId = new Map(zonasReservaActuales.map(zona => [String(zona.id), zona]));
+    const selectorZona = document.getElementById('reservaZonaId');
+    selectorZona?.querySelectorAll('option[value]').forEach(opcion => {
+        const zona = zonasPorId.get(opcion.value);
+        if (zona) opcion.textContent = `${zona.nombre} · ${formatearHorarioServicio(zona.horarios)}`;
+    });
+    document.querySelectorAll('#tb-zonas-config tr').forEach((fila, indice) => {
+        const zona = zonasReservaActuales[indice];
+        if (zona && fila.children[2]) fila.children[2].textContent = formatearHorarioServicio(zona.horarios);
+    });
+    document.querySelectorAll('#public-zonas-grid p').forEach(linea => {
+        const coincidencia = linea.textContent.match(/^\s*Horario:\s*(.+)$/i);
+        if (coincidencia) linea.textContent = `Horario: ${formatearHorarioServicio(coincidencia[1])}`;
+    });
+}
+
+function renderCalendarioPersonal() {
+    const contenedor = document.getElementById('calendar');
+    if (!contenedor || !window.FullCalendar) return;
+    if (window.zonasCalendar) window.zonasCalendar.destroy();
+    window.zonasCalendar = new FullCalendar.Calendar(contenedor, {
+        initialView: 'timeGridWeek',
+        locale: 'es',
+        height: 'auto',
+        headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' },
+        ...opcionesCalendarioSoloReservas(),
+        events: reservasZonasActuales.map(reserva => eventoReserva(reserva, false))
+    });
+    window.zonasCalendar.render();
+}
+
+async function renderDisponibilidadResidente() {
+    const selectZona = document.getElementById('reservaZonaId');
+    let calendario = document.getElementById('calendar-disponibilidad-residente');
+    if (!selectZona || !window.FullCalendar) return;
+    if (!calendario) {
+        calendario = document.createElement('section');
+        calendario.id = 'calendar-disponibilidad-residente';
+        calendario.className = 'resident-zone-calendar';
+        document.getElementById('calendar')?.closest('.card')?.insertAdjacentElement('beforebegin', calendario);
+    }
+    const zona = zonasReservaActuales.find(item => Number(item.id) === Number(selectZona.value));
+    if (!zona) {
+        calendario.innerHTML = '<p class="muted">Selecciona una zona para consultar sus horarios disponibles.</p>';
+        return;
+    }
+    const horario = horarioServicioZona(zona);
+    if (!horario) {
+        calendario.innerHTML = '<p class="empty-state">Esta zona no tiene un horario de servicio válido. La administración debe configurarlo.</p>';
+        return;
+    }
+    calendario.innerHTML = `<div class="resident-availability-header"><div><p class="section-kicker">Disponibilidad por horas</p><h3>Agenda: ${escapeHtml(zona.nombre)}</h3><p>Verde: disponible dentro de ${formatearHorarioServicio(horario)}. Gris: fuera de servicio.</p></div>${leyendaHorarioCalendario()}</div><div class="resident-zone-calendar-body"></div>`;
+    const cuerpo = calendario.querySelector('.resident-zone-calendar-body');
+    try {
+        const response = await fetch(`api/zonas.php?action=zona_disponibilidad&zona_id=${encodeURIComponent(selectZona.value)}`);
+        const result = await response.json();
+        if (result.status !== 'success') throw new Error(result.message);
+        if (window.residentAvailabilityCalendar) window.residentAvailabilityCalendar.destroy();
+        window.residentAvailabilityCalendar = new FullCalendar.Calendar(cuerpo, {
+            initialView: 'timeGridWeek',
+            locale: 'es',
+            height: 'auto',
+            headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' },
+            ...opcionesCalendarioHorario(zona),
+            events: (result.data.reservas || []).map(reserva => eventoReserva(reserva, false)),
+            dateClick: info => {
+                const fecha = fechaLocal(info.date);
+                const hora = horaInicialDesdeClick(info, horario);
+                if (fecha < fechaMinimaReserva()) return window.notificar('Selecciona una fecha futura para reservar.', 'warning');
+                if (!momentoEnHorarioServicio(info.date, horario)) return window.notificar(`La zona está fuera de servicio. Horario: ${formatearHorarioServicio(horario)}.`, 'warning');
+                document.getElementById('reservaFecha').value = fecha;
+                document.getElementById('reservaHoraInicio').value = hora;
+                document.getElementById('reservaHoraFin')?.focus();
+            }
+        });
+        window.residentAvailabilityCalendar.render();
+    } catch (error) {
+        cuerpo.innerHTML = `<p class="muted">${escapeHtml(error.message || 'No fue posible cargar la disponibilidad.')}</p>`;
+    }
+}
+
+function renderCalendarioInterno() {
+    const contenedor = document.getElementById('calendar');
+    if (!contenedor || !window.FullCalendar) return;
+    if (!zonasReservaActuales.length) {
+        contenedor.innerHTML = '<p class="empty-state">No hay zonas configuradas para consultar disponibilidad.</p>';
+        return;
+    }
+    const previo = Number(document.getElementById('calendarioZonaInterna')?.value || zonasReservaActuales[0].id);
+    contenedor.innerHTML = `<div class="internal-calendar-heading"><div><p class="section-kicker">Disponibilidad por inmueble</p><h3>Agenda operativa por horas</h3><p class="muted">Verde: disponible; amarillo: solicitud pendiente; rojo: reservado; gris: fuera de servicio.</p></div><label for="calendarioZonaInterna">Zona social<select id="calendarioZonaInterna">${zonasReservaActuales.map(zona => `<option value="${Number(zona.id)}" ${Number(zona.id) === previo ? 'selected' : ''}>${escapeHtml(zona.nombre)} · ${escapeHtml(formatearHorarioServicio(zona.horarios))}</option>`).join('')}</select></label></div>${leyendaHorarioCalendario()}<div id="calendar-interno" class="internal-zone-calendar"></div>`;
+    const selector = document.getElementById('calendarioZonaInterna');
+    const render = () => {
+        const zona = zonasReservaActuales.find(item => Number(item.id) === Number(selector.value));
+        const horario = horarioServicioZona(zona);
+        const destino = document.getElementById('calendar-interno');
+        if (!horario) {
+            destino.innerHTML = '<p class="empty-state">Configura el horario de servicio de esta zona antes de crear reservas.</p>';
+            return;
+        }
+        const reservas = reservasZonasActuales.filter(reserva => Number(reserva.zona_id) === Number(zona.id) && ['pendiente', 'aprobada'].includes(reserva.estado));
+        if (window.zonasCalendar) window.zonasCalendar.destroy();
+        window.zonasCalendar = new FullCalendar.Calendar(destino, {
+            initialView: 'timeGridWeek',
+            locale: 'es',
+            height: 'auto',
+            headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' },
+            ...opcionesCalendarioHorario(zona),
+            events: reservas.map(reserva => eventoReserva(reserva, true)),
+            dateClick: info => {
+                const fecha = fechaLocal(info.date);
+                const hora = horaInicialDesdeClick(info, horario);
+                if (fecha < fechaMinimaReserva(true)) return window.notificar('No puedes crear reservas en una fecha pasada.', 'warning');
+                if (!momentoEnHorarioServicio(info.date, horario)) return window.notificar(`Fuera de servicio: ${formatearHorarioServicio(horario)}.`, 'warning');
+                window.abrirReservaInterna(0, fecha, Number(zona.id), hora);
+            },
+            eventClick: info => window.abrirReservaInterna(Number(info.event.id))
+        });
+        window.zonasCalendar.render();
+    };
+    selector.onchange = render;
+    render();
+}
+
+window.abrirDetalleZona = async function (zonaId) {
+    const modal = document.getElementById('zona-detalle-modal');
+    const titulo = document.getElementById('zona-detalle-titulo');
+    if (!modal || !titulo) return;
+    modal.classList.remove('hidden');
+    titulo.textContent = 'Cargando zona…';
+    try {
+        const response = await fetch(`api/zonas.php?action=public_zona_detalle&zona_id=${encodeURIComponent(zonaId)}`);
+        const result = await response.json();
+        if (result.status !== 'success') throw new Error(result.message);
+        const { zona, reservas } = result.data;
+        const horario = horarioServicioZona(zona);
+        document.getElementById('zona-detalle-imagen').style.backgroundImage = `linear-gradient(120deg, rgba(15,23,42,.2), rgba(15,23,42,.58)), url("${imagenZona(zona)}")`;
+        titulo.textContent = zona.nombre;
+        document.getElementById('zona-detalle-descripcion').textContent = zona.descripcion || 'Espacio disponible para el disfrute de la comunidad.';
+        document.getElementById('zona-detalle-aforo').textContent = `${zona.aforo || 'No definido'} personas`;
+        document.getElementById('zona-detalle-horario').textContent = formatearHorarioServicio(zona.horarios);
+        document.getElementById('zona-detalle-tarifa').textContent = Number(zona.tarifa) ? formatCurrency(zona.tarifa) : 'Sin costo';
+        document.getElementById('zona-detalle-reglamento').textContent = zona.reglamento || 'No hay normas adicionales registradas.';
+        modal.dataset.zonaId = zona.id;
+        let video = document.getElementById('zona-detalle-video');
+        if (!video) {
+            video = document.createElement('div');
+            video.id = 'zona-detalle-video';
+            video.className = 'zona-video';
+            document.querySelector('.zona-detalle-rules')?.insertAdjacentElement('afterend', video);
+        }
+        if (video) {
+            const videoId = youtubeId(zona.youtube_url);
+            video.innerHTML = videoId ? `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}" title="Video de ${escapeHtml(zona.nombre)}" loading="lazy" allowfullscreen></iframe>` : '';
+        }
+        const leyenda = modal.querySelector('.zona-availability-legends');
+        if (leyenda) leyenda.innerHTML = leyendaHorarioCalendario().replace(/^<div[^>]*>|<\/div>$/g, '');
+        const calendario = document.getElementById('public-zona-calendar');
+        if (window.publicZonaCalendar) window.publicZonaCalendar.destroy();
+        window.publicZonaCalendar = new FullCalendar.Calendar(calendario, {
+            initialView: 'timeGridWeek',
+            locale: 'es',
+            height: 'auto',
+            headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' },
+            ...opcionesCalendarioHorario(zona),
+            events: (reservas || []).map(reserva => eventoReserva(reserva, false))
+        });
+        window.publicZonaCalendar.render();
+    } catch (error) {
+        console.error(error);
+        titulo.textContent = 'No fue posible cargar esta zona';
+        window.notificar('No fue posible cargar la disponibilidad de la zona.', 'error');
+    }
+};
+
+const cargarZonasConHorasAMPMBase = loadZonas;
+loadZonas = async function () {
+    await cargarZonasConHorasAMPMBase();
+    prepararSelectoresHoraAMPM(document.getElementById('view-container') || document);
+    actualizarHorariosVisibles();
+};
+
+const abrirFormularioZonaConHorasAMPMBase = window.abrirFormularioZona;
+window.abrirFormularioZona = function (...argumentos) {
+    abrirFormularioZonaConHorasAMPMBase(...argumentos);
+    prepararSelectoresHoraAMPM(document.getElementById('modalZona') || document);
+};
+
+const abrirReservaInternaConHorasAMPMBase = window.abrirReservaInterna;
+window.abrirReservaInterna = function (...argumentos) {
+    abrirReservaInternaConHorasAMPMBase(...argumentos);
+    prepararSelectoresHoraAMPM(document.getElementById('modalReservaInterna') || document);
+};
+
+const cargarZonasPublicasConHorasAMPMBase = window.loadPublicZonas;
+window.loadPublicZonas = async function (...argumentos) {
+    await cargarZonasPublicasConHorasAMPMBase(...argumentos);
+    actualizarHorariosVisibles();
+};
+
+const cargarFinanzasConAccesoCuotasBase = window.loadFinanzas;
+window.loadFinanzas = async function () {
+    await cargarFinanzasConAccesoCuotasBase();
+    const panel = document.getElementById('panel-cuotas-configuradas');
+    const modal = document.getElementById('modalCobro');
+    const encabezado = modal?.closest('.view')?.firstElementChild;
+    const acciones = encabezado?.querySelector('div:last-child');
+    if (panel && acciones && !document.getElementById('btnConfigurarCuotasAdministracion')) {
+        const boton = document.createElement('button');
+        boton.type = 'button';
+        boton.id = 'btnConfigurarCuotasAdministracion';
+        boton.className = 'btn btn-ghost finance-configure-fees-button';
+        boton.innerHTML = '<i class="fa-solid fa-sliders"></i> Configurar cuotas de administración';
+        boton.onclick = () => {
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            window.setTimeout(() => panel.querySelector('#cuotaValorApartamentos')?.focus(), 350);
+        };
+        acciones.prepend(boton);
+    }
+    prepararCamposMoneda(panel || document);
+};
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => prepararSelectoresHoraAMPM());
+else prepararSelectoresHoraAMPM();
+
+
+/* Personas por inmueble, PQRS con adjuntos y selección automática de franjas. */
+async function leerRespuestaImportacion(respuesta) {
+    const contenido = await respuesta.text();
+    try {
+        const datos = JSON.parse(contenido);
+        if (!respuesta.ok && datos.status === 'success') return { status: 'error', message: `Error HTTP ${respuesta.status}` };
+        return datos;
+    } catch (_) {
+        const detalle = contenido.trim().replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 220);
+        return { status: 'error', message: `El servidor respondió HTTP ${respuesta.status} sin JSON válido.${detalle ? ` Detalle: ${detalle}` : ' Revisa el log PHP del servidor.'}` };
+    }
+}
+
+function horaDesdeMinutosReserva(minutos) {
+    return `${String(Math.floor(minutos / 60)).padStart(2, '0')}:${String(minutos % 60).padStart(2, '0')}`;
+}
+
+function finAutomaticoReserva(inicio, zona) {
+    const horario = horarioServicioZona(zona);
+    const inicioMinutos = minutosHora(inicio);
+    if (!horario || inicioMinutos === null) return '';
+    const maximo = Math.max(1, Number(zona.max_horas_reserva) || 1) * 60;
+    let limite = horario.cierreMinutos;
+    if (horario.nocturno && inicioMinutos >= horario.aperturaMinutos) limite = 1425;
+    const fin = Math.floor(Math.min(inicioMinutos + maximo, limite) / 15) * 15;
+    return fin > inicioMinutos ? horaDesdeMinutosReserva(fin) : '';
+}
+
+function asignarFranjaAutomatica(inicio, zona, inicioEl, finEl) {
+    const fin = finAutomaticoReserva(inicio, zona);
+    inicioEl.value = inicio;
+    if (!fin) {
+        finEl.value = '';
+        window.notificar(`No hay tiempo suficiente dentro del horario ${formatearHorarioServicio(zona.horarios)} para iniciar una reserva a esa hora.`, 'warning');
+        return false;
+    }
+    finEl.value = fin;
+    return true;
+}
+
+async function renderDisponibilidadResidente() {
+    const selectZona = document.getElementById('reservaZonaId');
+    let calendario = document.getElementById('calendar-disponibilidad-residente');
+    if (!selectZona || !window.FullCalendar) return;
+    if (!calendario) {
+        calendario = document.createElement('section');
+        calendario.id = 'calendar-disponibilidad-residente';
+        calendario.className = 'resident-zone-calendar';
+        document.getElementById('calendar')?.closest('.card')?.insertAdjacentElement('beforebegin', calendario);
+    }
+    const zona = zonasReservaActuales.find(item => Number(item.id) === Number(selectZona.value));
+    if (!zona) {
+        calendario.innerHTML = '<p class="muted">Selecciona una zona para consultar sus horarios disponibles.</p>';
+        return;
+    }
+    const horario = horarioServicioZona(zona);
+    if (!horario) {
+        calendario.innerHTML = '<p class="empty-state">Esta zona no tiene un horario de servicio válido.</p>';
+        return;
+    }
+    calendario.innerHTML = `<div class="resident-availability-header"><div><p class="section-kicker">Disponibilidad por horas</p><h3>Agenda: ${escapeHtml(zona.nombre)}</h3><p>Al tocar una franja se completa la fecha, inicio y hasta ${Number(zona.max_horas_reserva) || 1} hora(s) de reserva.</p></div>${leyendaHorarioCalendario()}</div><div class="resident-zone-calendar-body"></div>`;
+    const cuerpo = calendario.querySelector('.resident-zone-calendar-body');
+    try {
+        const response = await fetch(`api/zonas.php?action=zona_disponibilidad&zona_id=${encodeURIComponent(selectZona.value)}`);
+        const result = await response.json();
+        if (result.status !== 'success') throw new Error(result.message);
+        if (window.residentAvailabilityCalendar) window.residentAvailabilityCalendar.destroy();
+        window.residentAvailabilityCalendar = new FullCalendar.Calendar(cuerpo, {
+            initialView: 'timeGridWeek', locale: 'es', height: 'auto',
+            headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' },
+            ...opcionesCalendarioHorario(zona),
+            events: (result.data.reservas || []).map(reserva => eventoReserva(reserva, false)),
+            dateClick: info => {
+                const fecha = fechaLocal(info.date);
+                const inicio = horaInicialDesdeClick(info, horario);
+                if (fecha < fechaMinimaReserva()) return window.notificar('Selecciona una fecha futura para reservar.', 'warning');
+                if (!momentoEnHorarioServicio(info.date, horario)) return window.notificar(`La zona está fuera de servicio. Horario: ${formatearHorarioServicio(horario)}.`, 'warning');
+                document.getElementById('reservaFecha').value = fecha;
+                const inicioEl = document.getElementById('reservaHoraInicio');
+                const finEl = document.getElementById('reservaHoraFin');
+                if (asignarFranjaAutomatica(inicio, zona, inicioEl, finEl)) finEl.focus();
+            }
+        });
+        window.residentAvailabilityCalendar.render();
+    } catch (error) {
+        cuerpo.innerHTML = `<p class="muted">${escapeHtml(error.message || 'No fue posible cargar la disponibilidad.')}</p>`;
+    }
+}
+
+const abrirReservaInternaConFinAutomaticoBase = window.abrirReservaInterna;
+window.abrirReservaInterna = function (reservaId = 0, fecha = '', zonaId = 0, hora = '08:00') {
+    abrirReservaInternaConFinAutomaticoBase(reservaId, fecha, zonaId, hora);
+    if (reservaId) return;
+    const zona = zonasReservaActuales.find(item => Number(item.id) === Number(zonaId));
+    const modal = document.getElementById('modalReservaInterna');
+    const inicio = modal?.querySelector('[name="hora_inicio"]');
+    const fin = modal?.querySelector('[name="hora_fin"]');
+    if (zona && inicio && fin) asignarFranjaAutomatica(hora, zona, inicio, fin);
+};
+
+let rolUsuariosActivo = 'admin';
+let inmueblesUsuariosActuales = [];
+
+function prepararInterfazUsuarios() {
+    const vista = document.getElementById('listaUsuarios')?.closest('.view');
+    if (!vista) return;
+    if (!vista.querySelector('#usuarios-role-tabs')) {
+        const tabla = document.getElementById('listaUsuarios')?.closest('.card');
+        tabla?.insertAdjacentHTML('beforebegin', '<nav id="usuarios-role-tabs" class="user-role-tabs" aria-label="Clasificación de personas"><button type="button" data-rol="admin"><i class="fa-solid fa-user-tie"></i> Administradores</button><button type="button" data-rol="vigilante"><i class="fa-solid fa-shield-halved"></i> Vigilantes</button><button type="button" data-rol="residente"><i class="fa-solid fa-house-user"></i> Residentes</button><button type="button" data-rol="propietario"><i class="fa-solid fa-key"></i> Propietarios</button></nav>');
+        vista.querySelectorAll('#usuarios-role-tabs button').forEach(boton => boton.onclick = () => { rolUsuariosActivo = boton.dataset.rol; renderTablaUsuarios(); });
+    }
+    const selectRol = document.getElementById('usrRol');
+    if (selectRol) selectRol.innerHTML = '<option value="admin">Administrador</option><option value="vigilante">Vigilante</option><option value="residente">Residente</option><option value="propietario">Propietario</option>';
+    const form = document.getElementById('formCrearUsuario');
+    if (form && !document.getElementById('usrInmuebleGrupo')) {
+        document.getElementById('usrEmail')?.removeAttribute('required');
+        const boton = form.querySelector('button[type="submit"]');
+        boton?.insertAdjacentHTML('beforebegin', '<div id="usrInmuebleGrupo" class="form-group"><label style="font-weight:500; font-size:14px; margin-bottom:4px; display:block;">Apartamento o casa asociado</label><select id="usrInmuebleId" style="width:100%; padding:10px; border-radius:6px; border:1px solid #ccc;"></select><small>Obligatorio para residentes y propietarios.</small></div><label id="usrAccesoGrupo" class="user-access-toggle"><input id="usrSinAcceso" type="checkbox" checked> Registrar como persona sin acceso al portal</label>');
+        selectRol?.addEventListener('change', sincronizarFormularioUsuario);
+        document.getElementById('usrSinAcceso')?.addEventListener('change', sincronizarFormularioUsuario);
+    }
+}
+
+function opcionesInmuebleUsuario(seleccionado = '') {
+    return '<option value="">Selecciona apartamento o casa…</option>' + inmueblesUsuariosActuales.map(inmueble => `<option value="${Number(inmueble.id)}" ${String(inmueble.id) === String(seleccionado) ? 'selected' : ''}>${escapeHtml([inmueble.torre, inmueble.nomenclatura || inmueble.apartamento].filter(Boolean).join(' · '))}</option>`).join('');
+}
+
+function sincronizarFormularioUsuario() {
+    const rol = document.getElementById('usrRol')?.value || '';
+    const esPersona = ['residente', 'propietario'].includes(rol);
+    const sinAcceso = document.getElementById('usrSinAcceso');
+    const grupoInmueble = document.getElementById('usrInmuebleGrupo');
+    const grupoAcceso = document.getElementById('usrAccesoGrupo');
+    const inmueble = document.getElementById('usrInmuebleId');
+    const correo = document.getElementById('usrEmail');
+    const password = document.getElementById('usrPass');
+    if (grupoInmueble) grupoInmueble.hidden = !esPersona;
+    if (grupoAcceso) grupoAcceso.hidden = !esPersona;
+    if (inmueble) inmueble.required = esPersona;
+    if (!esPersona && sinAcceso) { sinAcceso.checked = false; sinAcceso.disabled = true; } else if (sinAcceso) sinAcceso.disabled = false;
+    const requiereAcceso = !esPersona || !sinAcceso?.checked;
+    if (correo) correo.required = requiereAcceso;
+    if (password) {
+        password.required = !document.getElementById('usrId')?.value && requiereAcceso;
+        password.placeholder = requiereAcceso ? 'Contraseña mínima de 8 caracteres' : 'Sin contraseña: solo aparece en directorio';
+    }
+}
+
+function renderTablaUsuarios() {
+    const cuerpo = document.getElementById('listaUsuarios');
+    if (!cuerpo) return;
+    document.querySelectorAll('#usuarios-role-tabs button').forEach(boton => boton.classList.toggle('active', boton.dataset.rol === rolUsuariosActivo));
+    const usuarios = usuariosActuales.filter(usuario => usuario.rol === rolUsuariosActivo);
+    const etiqueta = { admin: 'administradores', vigilante: 'vigilantes', residente: 'residentes', propietario: 'propietarios' }[rolUsuariosActivo];
+    const nota = document.getElementById('usuarios-contador');
+    if (nota) nota.textContent = `${usuarios.length} ${etiqueta} · las personas sin cuenta permanecen en el directorio de portería.`;
+    cuerpo.innerHTML = usuarios.length ? usuarios.map(usuario => `<tr><td><strong>${escapeHtml(usuario.nombre)}</strong>${Number(usuario.tiene_cuenta) ? '' : '<br><small class="person-no-account">Sin acceso al portal</small>'}</td><td>${escapeHtml(usuario.documento)}</td><td><span class="reserva-estado">${escapeHtml(usuario.rol)}</span></td><td>${escapeHtml(usuario.inmuebles || 'Sin inmueble')}</td><td class="user-actions"><button class="btn btn-ghost user-status-action" onclick="window.openUsuarioModal(${Number(usuario.id)})"><i class="fa-solid fa-pen"></i> Editar</button></td></tr>`).join('') : `<tr><td colspan="5">No hay ${etiqueta} registrados.</td></tr>`;
+}
+
+loadUsuarios = async function () {
+    const [usuariosResponse, inmueblesResponse] = await Promise.all([fetch('api/users.php?action=list'), fetch('api/inmuebles.php?action=list')]);
+    const [usuarios, inmuebles] = await Promise.all([usuariosResponse.json(), inmueblesResponse.json()]);
+    if (usuarios.status !== 'success') return window.notificar(usuarios.message || 'No fue posible cargar usuarios.', 'error');
+    usuariosActuales = usuarios.data || [];
+    inmueblesUsuariosActuales = inmuebles.status === 'success' ? inmuebles.data || [] : [];
+    prepararInterfazUsuarios();
+    renderTablaUsuarios();
+};
+
+window.openUsuarioModal = function (id = null, rolPreferido = rolUsuariosActivo, inmueblePreferido = '') {
+    prepararInterfazUsuarios();
+    const form = document.getElementById('formCrearUsuario');
+    const usuario = usuariosActuales.find(item => Number(item.id) === Number(id));
+    form?.reset();
+    document.getElementById('usrId').value = usuario?.id || '';
+    document.getElementById('modalUsuarioTitle').textContent = usuario ? 'Editar persona o usuario' : `Crear ${rolPreferido}`;
+    document.getElementById('usrDoc').value = usuario?.documento || '';
+    document.getElementById('usrNombre').value = usuario?.nombre || '';
+    document.getElementById('usrEmail').value = usuario?.email || '';
+    document.getElementById('usrRol').value = usuario?.rol || rolPreferido;
+    document.getElementById('usrSinAcceso').checked = usuario ? !Number(usuario.tiene_cuenta) : ['residente', 'propietario'].includes(rolPreferido);
+    document.getElementById('usrInmuebleId').innerHTML = opcionesInmuebleUsuario(inmueblePreferido || usuario?.inmueble_id || '');
+    sincronizarFormularioUsuario();
+    document.getElementById('modalUsuario').classList.remove('hidden');
+};
+
+document.addEventListener('submit', async event => {
+    const form = event.target;
+    if (form.id !== 'formCrearUsuario') return;
+    event.preventDefault();
+    event.stopPropagation();
+    const datos = new FormData();
+    [['action', document.getElementById('usrId').value ? 'update' : 'crear_usuario'], ['id', document.getElementById('usrId').value], ['documento', document.getElementById('usrDoc').value], ['nombre', document.getElementById('usrNombre').value], ['email', document.getElementById('usrEmail').value], ['password', document.getElementById('usrPass').value], ['rol', document.getElementById('usrRol').value], ['inmueble_id', document.getElementById('usrInmuebleId').value]].forEach(([nombre, valor]) => datos.append(nombre, valor));
+    if (document.getElementById('usrSinAcceso').checked) datos.append('sin_acceso', '1');
+    const respuesta = await fetch('api/users.php', { method: 'POST', body: datos });
+    const resultado = await respuesta.json();
+    window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+    if (resultado.status === 'success') { document.getElementById('modalUsuario').classList.add('hidden'); await loadUsuarios(); }
+}, true);
+
+loadInmuebles = async function () {
+    const [inmueblesResponse, parqueaderosResponse] = await Promise.all([
+        fetch('api/inmuebles.php?action=list'),
+        fetch('api/parqueaderos.php?action=list')
+    ]);
+    const [resultado, parqueaderosResultado] = await Promise.all([
+        inmueblesResponse.json(),
+        parqueaderosResponse.json()
+    ]);
+    if (resultado.status !== 'success') return window.notificar(resultado.message || 'No fue posible cargar inmuebles.', 'error');
+    inmueblesActuales = resultado.data || [];
+    window.parqueaderosEnInmuebles = parqueaderosResultado.status === 'success' ? parqueaderosResultado.data || [] : [];
+    const tabla = document.getElementById('tb-inmuebles');
+    const cabecera = tabla?.closest('table')?.querySelector('thead tr');
+    if (cabecera) cabecera.innerHTML = '<th>Unidad</th><th>Torre/bloque</th><th>Ocupación</th><th>Parqueadero</th><th>Vehículos / mascotas</th><th>Mora</th><th>Acciones</th>';
+    if (tabla) tabla.innerHTML = inmueblesActuales.length ? inmueblesActuales.map(inmueble => {
+        const sinCuenta = Number(inmueble.num_cuentas || 0) === 0;
+        const estado = `<span class="inmueble-state ${sinCuenta ? 'is-empty' : 'is-linked'}"><i class="fa-solid ${sinCuenta ? 'fa-user-slash' : 'fa-user-check'}"></i> ${sinCuenta ? 'Sin usuario con acceso' : `${Number(inmueble.num_cuentas)} con acceso`}</span><small>${Number(inmueble.num_residentes)} residente(s) · ${Number(inmueble.num_personas)} persona(s)</small>`;
+        const parqueadero = inmueble.parqueadero_codigo ? `${escapeHtml(inmueble.parqueadero_codigo)}<br><small>${escapeHtml(inmueble.parqueadero_tipo)}</small>` : 'Sin parqueadero';
+        return `<tr class="inmueble-row" tabindex="0" onclick="window.abrirDetalleInmueble(${Number(inmueble.id)})"><td><strong>${escapeHtml(inmueble.nomenclatura || inmueble.apartamento)}</strong><br><small>${escapeHtml(inmueble.tipo_unidad)}</small></td><td>${escapeHtml(inmueble.torre || '—')}</td><td>${estado}</td><td>${parqueadero}</td><td>${Number(inmueble.num_vehiculos)} vehículo(s)<br><small>${Number(inmueble.num_mascotas)} mascota(s)</small></td><td>${formatCurrency(inmueble.mora_actual)}</td><td class="inmueble-actions"><button class="btn btn-ghost" onclick="event.stopPropagation(); window.abrirDetalleInmueble(${Number(inmueble.id)})">Ver ficha</button><button class="btn btn-ghost" onclick="event.stopPropagation(); window.abrirModalInmueble(${Number(inmueble.id)})">Editar</button></td></tr>`;
+    }).join('') : '<tr><td colspan="7">No hay unidades registradas.</td></tr>';
+    document.getElementById('formInmueble').onsubmit = guardarInmueble;
+};
+
+window.abrirDetalleInmueble = async function (inmuebleId) {
+    const [detalleResponse, usuariosResponse] = await Promise.all([fetch(`api/inmuebles.php?action=detalle&inmueble_id=${encodeURIComponent(inmuebleId)}`), fetch('api/users.php?action=list')]);
+    const [detalle, usuarios] = await Promise.all([detalleResponse.json(), usuariosResponse.json()]);
+    if (detalle.status !== 'success') return window.notificar(detalle.message || 'No fue posible abrir el inmueble.', 'error');
+    const { inmueble, personas = [], vehiculos = [], mascotas = [] } = detalle.data;
+    let modal = document.getElementById('modalDetalleInmueble');
+    if (!modal) { document.body.insertAdjacentHTML('beforeend', '<div id="modalDetalleInmueble" class="login-modal detalle-inmueble-modal hidden"></div>'); modal = document.getElementById('modalDetalleInmueble'); }
+    const tarjetasPersonas = personas.length ? personas.map(persona => `<article class="inmueble-person-card"><span class="inmueble-person-icon"><i class="fa-solid ${persona.tipo_relacion === 'propietario' ? 'fa-key' : 'fa-house-user'}"></i></span><div><strong>${escapeHtml(persona.nombre)}</strong><small>${escapeHtml(persona.tipo_relacion)} · ${Number(persona.tiene_cuenta) ? 'Acceso al portal' : 'Solo directorio de portería'}</small><small>${escapeHtml(persona.contacto || persona.email || 'Sin contacto')}</small></div></article>`).join('') : '<p class="empty-state">No hay propietarios ni residentes relacionados.</p>';
+    const opcionesPersonas = usuarios.status === 'success' ? usuarios.data.filter(persona => ['residente', 'propietario'].includes(persona.rol)).map(persona => `<option value="${Number(persona.id)}">${escapeHtml(persona.nombre)} · ${escapeHtml(persona.documento)}</option>`).join('') : '';
+    modal.innerHTML = `<div class="login-box inmueble-detail-dialog"><button class="close-btn" type="button" onclick="document.getElementById('modalDetalleInmueble').classList.add('hidden')"></button><header class="inmueble-detail-heading"><div><p class="section-kicker">Ficha integral del inmueble</p><h2>${escapeHtml(inmueble.nomenclatura || inmueble.apartamento)}</h2><p>${escapeHtml(inmueble.tipo_unidad)} · ${escapeHtml(inmueble.torre || 'Sin torre')} · ${inmueble.parqueadero_codigo ? `Parqueadero ${escapeHtml(inmueble.parqueadero_codigo)}` : 'Sin parqueadero asignado'}</p></div><strong>${formatCurrency(inmueble.mora_actual)}</strong></header><section class="inmueble-detail-section"><div class="inmueble-section-title"><h3>Personas vinculadas</h3><button class="btn btn-primary" type="button" onclick="window.abrirPersonaDesdeInmueble(${Number(inmueble.id)})"><i class="fa-solid fa-user-plus"></i> Agregar persona</button></div><div class="inmueble-person-grid">${tarjetasPersonas}</div><form id="formVincularUsuarioInmueble" class="inmueble-link-form"><input type="hidden" name="inmueble_id" value="${Number(inmueble.id)}"><select name="usuario_id" required><option value="">Vincular persona existente…</option>${opcionesPersonas}</select><select name="tipo_relacion" required><option value="residente">Residente</option><option value="propietario">Propietario</option></select><button class="btn btn-ghost" type="submit">Vincular</button></form></section><section class="inmueble-detail-grid"><div class="inmueble-detail-section"><h3><i class="fa-solid fa-car"></i> Vehículos</h3>${vehiculos.length ? `<ul>${vehiculos.map(vehiculo => `<li><strong>${escapeHtml(vehiculo.placa)}</strong> · ${escapeHtml([vehiculo.tipo, vehiculo.marca, vehiculo.linea].filter(Boolean).join(' · '))}</li>`).join('')}</ul>` : '<p class="muted">Sin vehículos registrados.</p>'}</div><div class="inmueble-detail-section"><h3><i class="fa-solid fa-paw"></i> Mascotas</h3>${mascotas.length ? `<ul>${mascotas.map(mascota => `<li>${escapeHtml(mascota.descripcion)}</li>`).join('')}</ul>` : '<p class="muted">Sin mascotas registradas.</p>'}</div></section></div>`;
+    modal.querySelector('#formVincularUsuarioInmueble').onsubmit = async event => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget); data.append('action', 'vincular_usuario');
+        const response = await fetch('api/inmuebles.php', { method: 'POST', body: data }); const result = await response.json();
+        window.notificar(result.message, result.status === 'success' ? 'success' : 'error');
+        if (result.status === 'success') window.abrirDetalleInmueble(inmuebleId);
+    };
+    modal.classList.remove('hidden');
+};
+
+window.abrirPersonaDesdeInmueble = function (inmuebleId) {
+    let modal = document.getElementById('modalPersonaInmueble');
+    if (!modal) { document.body.insertAdjacentHTML('beforeend', '<div id="modalPersonaInmueble" class="login-modal hidden"></div>'); modal = document.getElementById('modalPersonaInmueble'); }
+    modal.innerHTML = `<div class="login-box inmueble-person-dialog"><button class="close-btn" type="button" onclick="document.getElementById('modalPersonaInmueble').classList.add('hidden')"></button><h2>Agregar residente o propietario</h2><p class="muted">Puedes guardarlo solo para el directorio de Portería o habilitar su acceso al portal.</p><form id="formPersonaInmueble" class="stack-form"><select name="rol" required><option value="residente">Residente</option><option value="propietario">Propietario</option></select><input name="documento" placeholder="Documento" required><input name="nombre" placeholder="Nombre completo" required><input name="email" type="email" placeholder="Correo (opcional si no tendrá acceso)"><label class="user-access-toggle"><input name="sin_acceso" type="checkbox" checked> Sin acceso al portal</label><input name="password" type="password" placeholder="Contraseña si tendrá acceso" minlength="8"><input type="hidden" name="inmueble_id" value="${Number(inmuebleId)}"><button class="btn btn-primary" type="submit">Guardar y enlazar</button></form></div>`;
+    modal.querySelector('form').onsubmit = async event => { event.preventDefault(); const data = new FormData(event.currentTarget); data.append('action', 'crear_usuario'); const response = await fetch('api/users.php', { method: 'POST', body: data }); const result = await response.json(); window.notificar(result.message, result.status === 'success' ? 'success' : 'error'); if (result.status === 'success') { modal.classList.add('hidden'); await loadInmuebles(); window.abrirDetalleInmueble(inmuebleId); } };
+    modal.classList.remove('hidden');
+};
+
+window.abrirFormularioPQRS = function () {
+    let modal = document.getElementById('modalPQRS');
+    if (!modal) { document.getElementById('view-container').insertAdjacentHTML('beforeend', '<div id="modalPQRS" class="login-modal hidden"></div>'); modal = document.getElementById('modalPQRS'); }
+    modal.innerHTML = '<div class="login-box pqrs-dialog"><button class="close-btn" type="button" onclick="document.getElementById(\'modalPQRS\').classList.add(\'hidden\')"></button><h2>Radicar PQRS</h2><form id="formPQRS" class="stack-form" enctype="multipart/form-data"><input name="asunto" maxlength="150" placeholder="Asunto" required><select name="categoria"><option>Queja</option><option>Petición</option><option>Reclamo</option><option>Sugerencia</option><option>General</option></select><textarea name="descripcion" placeholder="Describe tu solicitud" required></textarea><label class="pqrs-file-field">Adjuntos opcionales<input name="adjuntos[]" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,.mp4,.webm,.mov,image/jpeg,image/png,image/webp,application/pdf,video/mp4,video/webm,video/quicktime"><small>Máximo 5 archivos; cada uno hasta 25 MB. Imágenes, PDF o video MP4/WEBM/MOV.</small></label><button class="btn btn-primary" type="submit">Radicar PQRS</button></form></div>';
+    modal.querySelector('form').onsubmit = async event => { event.preventDefault(); event.stopPropagation(); const data = new FormData(event.currentTarget); data.append('action', 'crear'); const response = await fetch('api/reclamaciones.php', { method: 'POST', body: data }); const result = await response.json(); window.notificar(result.message, result.status === 'success' ? 'success' : 'error'); if (result.status === 'success') { modal.classList.add('hidden'); loadReclamaciones(); } };
+    modal.classList.remove('hidden');
+};
+
+function botonesAdjuntosReclamacion(adjuntos = []) {
+    if (!adjuntos.length) return '<span class="muted">—</span>';
+    const codificados = JSON.stringify(encodeURIComponent(JSON.stringify(adjuntos))).replace(/"/g, '&quot;');
+    return `<button type="button" class="btn btn-ghost pqrs-files-button" onclick="window.verAdjuntosReclamacionCodificados(${codificados})"><i class="fa-solid fa-paperclip"></i> ${adjuntos.length}</button>`;
+}
+
+window.verAdjuntosReclamacionCodificados = function (valor) {
+    try { window.verAdjuntosReclamacion(JSON.parse(decodeURIComponent(valor))); } catch (_) { window.notificar('No fue posible leer los adjuntos de esta PQRS.', 'error'); }
+}
+
+window.verAdjuntosReclamacion = function (adjuntos) {
+    const contenido = adjuntos.map(adjunto => {
+        const url = `api/reclamaciones.php?action=ver_adjunto&adjunto_id=${Number(adjunto.id)}`;
+        const esImagen = String(adjunto.mime).startsWith('image/');
+        const esVideo = String(adjunto.mime).startsWith('video/');
+        const vista = esImagen ? `<img src="${url}" alt="${escapeHtml(adjunto.nombre_original)}">` : esVideo ? `<video controls preload="metadata" src="${url}"></video>` : '<i class="fa-solid fa-file-pdf"></i>';
+        return `<article class="pqrs-attachment-preview">${vista}<a href="${url}" target="_blank" rel="noopener">${escapeHtml(adjunto.nombre_original)}</a></article>`;
+    }).join('');
+    if (window.Swal) Swal.fire({ title: 'Adjuntos de la PQRS', html: `<div class="pqrs-attachment-grid">${contenido}</div>`, width: 760, confirmButtonText: 'Cerrar' });
+};
+
+loadReclamaciones = async function () {
+    const response = await fetch('api/reclamaciones.php?action=list');
+    const result = await response.json();
+    const tabla = document.getElementById('tb-reclamaciones');
+    const cabecera = tabla?.closest('table')?.querySelector('thead tr');
+    if (cabecera) cabecera.innerHTML = '<th>Asunto</th><th>Usuario</th><th>Fecha</th><th>Estado</th><th>Adjuntos</th>';
+    if (result.status !== 'success') return window.notificar(result.message || 'No fue posible cargar PQRS.', 'error');
+    tabla.innerHTML = result.data.length ? result.data.map(item => `<tr><td><strong>${escapeHtml(item.asunto)}</strong><br><small>${escapeHtml(item.categoria || 'General')}</small></td><td>${escapeHtml(item.usuario_nombre || 'Tú')}</td><td>${escapeHtml(item.creado_en)}</td><td><span class="reserva-estado">${escapeHtml(item.estado)}</span></td><td>${botonesAdjuntosReclamacion(item.adjuntos || [])}</td></tr>`).join('') : '<tr><td colspan="5">No hay PQRS radicadas.</td></tr>';
 };

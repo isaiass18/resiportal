@@ -44,13 +44,25 @@
 
 ## [x] Experiencia operativa reciente
 
-- Calendarios de zonas en el inicio público, residente/propietario y operación interna: verde únicamente dentro del horario de servicio, ámbar para solicitudes pendientes, rojo para reservas aprobadas y gris fuera de servicio; el servidor también rechaza franjas fuera del horario.
+- El servidor valida que las reservas nuevas estén dentro del horario de servicio y conserva las franjas públicas sin exponer inmuebles ni identidades.
 - Notificaciones, confirmaciones e ingreso de texto de las acciones activas se presentan mediante SweetAlert2 en lugar de diálogos nativos del navegador.
 - Selector de portal accesible, con tres accesos compactos en una fila en móvil y desplazamiento vertical dentro del modal.
 - Valores financieros presentados con separador de miles COP; los campos monetarios conservan el valor numérico que recibe el servidor al guardar.
 - Cartera agrupada por inmueble, con propietarios consolidados y acceso directo para registrar el pago del apartamento/casa seleccionado; las tarjetas administrativas enlazan a sus módulos.
 - Administración de contenido: eventos editables/eliminables y novedades editables/eliminables, con control de conjunto, permisos y auditoría.
 - Importación XLSX guiada para residentes, propietarios, inmuebles y parqueaderos: selección de entidad, mapeo explícito de columnas, previsualización, validación por fila y escritura transaccional solo después de confirmar una vista previa sin errores.
+
+## [~] Cambios locales pendientes de validación visual y despliegue
+
+- Menú administrativo agrupado en **Vigilancia** con Directorio, Visitas, Paquetes y Novedades; la cuenta de vigilante conserva una entrada raíz de Portería para su operación.
+- Finanzas incorpora un botón visible **Configurar cuotas de administración** que lleva al selector paginado por inmueble y permite guardar el valor mensual formateado.
+- Los calendarios públicos, de residente/propietario y de operación interna se ajustaron para pintar cada franja de 30 minutos: verde dentro del servicio y gris fuera de él, sin eventos de fondo recurrentes que oculten el cierre. Las reservas pendientes siguen en ámbar y las aprobadas en rojo.
+- Las etiquetas de hora, eventos, horarios mostrados y controles de reserva/edición de zona ahora presentan AM/PM; las solicitudes al API y los valores de base de datos continúan como `HH:MM`.
+- Antes de marcar estos cambios como desplegados, deben comprobarse en navegador sin caché los casos `05:00–22:00`, `08:00–17:00` y el horario nocturno `22:00–02:00`.
+- Al seleccionar una franja del calendario, el formulario completa automáticamente fecha, inicio y fin según el máximo de horas configurado, sin superar el horario de servicio.
+- PQRS permite adjuntar hasta cinco imágenes, PDF o videos y la administración puede abrirlos desde la tabla; requiere aplicar una sola vez `MIGRACION_20260809_RECLAMACIONES_ADJUNTOS.sql` antes del despliegue.
+- Usuarios se clasifican por pestañas y residentes/propietarios deben enlazarse a un inmueble; una persona sin contraseña se conserva para el directorio de Portería sin obtener acceso al portal. La ficha de inmueble reúne personas, cuentas, vehículos y mascotas.
+- El importador ahora transforma errores de ZIP/XML/archivo o servidor en JSON legible para el navegador; sigue pendiente verificarlo con archivos XLSX reales en el entorno desplegado.
 
 ## [x] Finanzas operativas y cuotas
 
@@ -97,7 +109,7 @@
 
 - **Aplicación de pagos a cuotas:** un pago aprobado disminuye `mora_actual`, pero aún no se concilia contra cuotas individuales ni pagos parciales/FIFO. Por eso las cuotas se presentan como “Cobro generado”, no como pagadas.
 - **Portería/vigilancia:** se cubren Directorio, visitas, paquetes y minuta con fecha/hora operativa; permanecen pendientes las capacidades avanzadas detalladas en `VIGILANCIA_BRECHAS.md`.
-- **PQRS:** no tiene asignación responsable, respuestas, adjuntos, SLA, notificaciones ni ciclo completo de estados.
+- **PQRS:** la carga y vista segura de adjuntos (imágenes, PDF y video) está implementada localmente y requiere aplicar `MIGRACION_20260809_RECLAMACIONES_ADJUNTOS.sql` durante un despliegue autorizado. Siguen pendientes responsable, respuestas, SLA, notificaciones y ciclo completo de estados.
 - **Finanzas:** no existe contabilidad de doble partida, conciliación bancaria, facturación, intereses, recibos fiscales ni recaudo electrónico.
 - **Auditoría y reportes:** existen registros puntuales para comunicados/importaciones y exportación básica; no hay una auditoría integral ni reportes PDF/Excel completos de todas las áreas.
 - **Comunicaciones/documentos:** el comunicado y los eventos funcionan; el gestor documental integral de actas/manuales no está completado.

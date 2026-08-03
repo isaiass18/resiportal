@@ -13,7 +13,7 @@
     <!-- Swiper JS for sliders -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=20260819">
+    <link rel="stylesheet" href="css/style.css?v=20260825">
 </head>
 
 <body>
@@ -220,10 +220,25 @@
                 <li data-view="home-residente"><i class="fa-solid fa-house-user"></i> <span>Inicio (Cartelera)</span>
                 </li>
                 <li data-view="mis-pagos"><i class="fa-solid fa-file-invoice"></i> <span>Mis Pagos</span></li>
-                <li data-view="directorio"><i class="fa-solid fa-address-book"></i> <span>Directorio</span></li>
-                <li data-view="visitas"><i class="fa-solid fa-person-walking-arrow-right"></i> <span>Visitas</span></li>
-                <li data-view="paquetes"><i class="fa-solid fa-box"></i> <span>Paquetes</span></li>
-                <li data-view="minuta"><i class="fa-solid fa-clipboard"></i> <span>Novedades</span></li>
+                <li class="nav-vigilante-root" data-view="porteria"><i class="fa-solid fa-shield-halved"></i>
+                    <span>Portería</span>
+                </li>
+                <li class="nav-submenu nav-admin-vigilancia" data-submenu="vigilancia">
+                    <button class="nav-submenu-toggle" type="button" aria-expanded="true"
+                        aria-controls="nav-vigilancia-items">
+                        <span class="nav-submenu-label"><i
+                                class="fa-solid fa-shield-halved"></i><span>Vigilancia</span></span>
+                        <i class="fa-solid fa-chevron-down nav-submenu-chevron" aria-hidden="true"></i>
+                    </button>
+                    <ul id="nav-vigilancia-items" class="nav-submenu-items">
+                        <li data-view="directorio"><i class="fa-solid fa-address-book"></i> <span>Directorio</span></li>
+                        <li data-view="visitas"><i class="fa-solid fa-person-walking-arrow-right"></i>
+                            <span>Visitas</span>
+                        </li>
+                        <li data-view="paquetes"><i class="fa-solid fa-box"></i> <span>Paquetes</span></li>
+                        <li data-view="minuta"><i class="fa-solid fa-clipboard"></i> <span>Novedades</span></li>
+                    </ul>
+                </li>
                 <li data-view="finanzas"><i class="fa-solid fa-money-bill-wave"></i> <span>Finanzas / Cartera</span>
                 </li>
                 <li data-view="comunicaciones"><i class="fa-solid fa-bullhorn"></i> <span>Novedades y Eventos</span>
@@ -1306,7 +1321,7 @@
     </template>
 
     <!-- Script Principal -->
-    <script src="js/app.js?v=20260819"></script>
+    <script src="js/app.js?v=20260825"></script>
 </body>
 
 </html>

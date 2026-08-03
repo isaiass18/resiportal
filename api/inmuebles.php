@@ -17,11 +17,49 @@ function getInmuebleId(PDO $pdo, int $userId): ?int
     return $row ? (int) $row['inmueble_id'] : null;
 }
 
+function inmuebleDelConjunto(PDO $pdo, int $inmuebleId, int $conjuntoId): bool
+{
+    $stmt = $pdo->prepare('SELECT id FROM inmuebles WHERE id = ? AND conjunto_id = ?');
+    $stmt->execute([$inmuebleId, $conjuntoId]);
+    return (bool) $stmt->fetch();
+}
+
 if ($action === 'list') {
     if ($rol !== 'admin') responseJSON('error', 'Sin permisos');
-    $stmt = $pdo->prepare("SELECT i.*, (SELECT COUNT(*) FROM vehiculos v WHERE v.inmueble_id = i.id) AS num_vehiculos, (SELECT COUNT(*) FROM mascotas m WHERE m.inmueble_id = i.id) AS num_mascotas, a.id AS asignacion_parqueadero_id, p.id AS parqueadero_id, p.codigo AS parqueadero_codigo, p.tipo AS parqueadero_tipo FROM inmuebles i LEFT JOIN asignaciones_parqueadero a ON a.inmueble_id = i.id AND a.retirado_en IS NULL LEFT JOIN parqueaderos p ON p.id = a.parqueadero_id WHERE i.conjunto_id = ? ORDER BY COALESCE(i.torre, i.nomenclatura), i.apartamento");
+    $stmt = $pdo->prepare("SELECT i.*, (SELECT COUNT(*) FROM vehiculos v WHERE v.inmueble_id = i.id) AS num_vehiculos, (SELECT COUNT(*) FROM mascotas m WHERE m.inmueble_id = i.id) AS num_mascotas, (SELECT COUNT(DISTINCT r.usuario_id) FROM relacion_inmuebles_usuarios r WHERE r.inmueble_id = i.id) AS num_personas, (SELECT COUNT(DISTINCT r.usuario_id) FROM relacion_inmuebles_usuarios r JOIN usuarios u ON u.id = r.usuario_id WHERE r.inmueble_id = i.id AND r.tipo_relacion = 'residente') AS num_residentes, (SELECT COUNT(DISTINCT r.usuario_id) FROM relacion_inmuebles_usuarios r JOIN usuarios u ON u.id = r.usuario_id WHERE r.inmueble_id = i.id AND u.password_hash IS NOT NULL AND u.password_hash <> '') AS num_cuentas, a.id AS asignacion_parqueadero_id, p.id AS parqueadero_id, p.codigo AS parqueadero_codigo, p.tipo AS parqueadero_tipo FROM inmuebles i LEFT JOIN asignaciones_parqueadero a ON a.inmueble_id = i.id AND a.retirado_en IS NULL LEFT JOIN parqueaderos p ON p.id = a.parqueadero_id WHERE i.conjunto_id = ? ORDER BY COALESCE(i.torre, i.nomenclatura), i.apartamento");
     $stmt->execute([$conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
+}
+
+if ($action === 'detalle') {
+    if ($rol !== 'admin') responseJSON('error', 'Sin permisos');
+    $inmuebleId = (int) ($_GET['inmueble_id'] ?? 0);
+    if (!inmuebleDelConjunto($pdo, $inmuebleId, $conjuntoId)) responseJSON('error', 'Inmueble no encontrado');
+    $inmueble = $pdo->prepare('SELECT i.*, p.codigo AS parqueadero_codigo, p.tipo AS parqueadero_tipo FROM inmuebles i LEFT JOIN asignaciones_parqueadero a ON a.inmueble_id = i.id AND a.retirado_en IS NULL LEFT JOIN parqueaderos p ON p.id = a.parqueadero_id WHERE i.id = ? AND i.conjunto_id = ?');
+    $inmueble->execute([$inmuebleId, $conjuntoId]);
+    $personas = $pdo->prepare("SELECT r.id AS relacion_id, r.tipo_relacion, u.id, u.nombre, u.documento, u.email, u.contacto, u.activo, CASE WHEN u.password_hash IS NULL OR u.password_hash = '' THEN 0 ELSE 1 END AS tiene_cuenta FROM relacion_inmuebles_usuarios r JOIN usuarios u ON u.id = r.usuario_id WHERE r.inmueble_id = ? AND u.conjunto_id = ? ORDER BY FIELD(r.tipo_relacion, 'propietario', 'residente'), u.nombre");
+    $personas->execute([$inmuebleId, $conjuntoId]);
+    $vehiculos = $pdo->prepare('SELECT id, placa, tipo, marca, linea FROM vehiculos WHERE inmueble_id = ? ORDER BY placa');
+    $vehiculos->execute([$inmuebleId]);
+    $mascotas = $pdo->prepare('SELECT id, descripcion FROM mascotas WHERE inmueble_id = ? ORDER BY id DESC');
+    $mascotas->execute([$inmuebleId]);
+    responseJSON('success', '', ['inmueble' => $inmueble->fetch(), 'personas' => $personas->fetchAll(), 'vehiculos' => $vehiculos->fetchAll(), 'mascotas' => $mascotas->fetchAll()]);
+}
+
+if ($action === 'vincular_usuario') {
+    if ($rol !== 'admin') responseJSON('error', 'Sin permisos');
+    $inmuebleId = (int) ($_POST['inmueble_id'] ?? 0);
+    $usuarioId = (int) ($_POST['usuario_id'] ?? 0);
+    $tipoRelacion = $_POST['tipo_relacion'] ?? '';
+    if (!$usuarioId || !in_array($tipoRelacion, ['residente', 'propietario'], true) || !inmuebleDelConjunto($pdo, $inmuebleId, $conjuntoId)) responseJSON('error', 'Selecciona una persona, una relación y un inmueble válidos');
+    $usuario = $pdo->prepare('SELECT id, rol FROM usuarios WHERE id = ? AND conjunto_id = ?');
+    $usuario->execute([$usuarioId, $conjuntoId]);
+    $persona = $usuario->fetch();
+    if (!$persona || $persona['rol'] !== $tipoRelacion) responseJSON('error', 'La persona debe tener el mismo rol que la relación seleccionada');
+    $existe = $pdo->prepare('SELECT id FROM relacion_inmuebles_usuarios WHERE inmueble_id = ? AND usuario_id = ? AND tipo_relacion = ? LIMIT 1');
+    $existe->execute([$inmuebleId, $usuarioId, $tipoRelacion]);
+    if (!$existe->fetch()) $pdo->prepare('INSERT INTO relacion_inmuebles_usuarios (inmueble_id, usuario_id, tipo_relacion) VALUES (?, ?, ?)')->execute([$inmuebleId, $usuarioId, $tipoRelacion]);
+    responseJSON('success', 'Persona enlazada al inmueble');
 }
 
 if ($action === 'guardar_inmueble') {
@@ -37,9 +75,7 @@ if ($action === 'guardar_inmueble') {
     if ($coeficiente < 0 || $mora < 0) responseJSON('error', 'Coeficiente y mora deben ser positivos');
 
     if ($id) {
-        $stmt = $pdo->prepare('SELECT id FROM inmuebles WHERE id = ? AND conjunto_id = ?');
-        $stmt->execute([$id, $conjuntoId]);
-        if (!$stmt->fetch()) responseJSON('error', 'Inmueble no encontrado');
+        if (!inmuebleDelConjunto($pdo, $id, $conjuntoId)) responseJSON('error', 'Inmueble no encontrado');
         $duplicado = $pdo->prepare('SELECT id FROM inmuebles WHERE conjunto_id = ? AND nomenclatura = ? AND id <> ?');
         $duplicado->execute([$conjuntoId, $nomenclatura, $id]);
         if ($duplicado->fetch()) responseJSON('error', 'La nomenclatura ya existe');
