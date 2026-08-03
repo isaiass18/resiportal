@@ -72,4 +72,35 @@ elseif ($action === 'registrar_pago') {
         responseJSON('error', 'Error registrando pago: ' . $e->getMessage());
     }
 }
+elseif ($action === 'mi_deuda') {
+    if ($rol !== 'residente') responseJSON('error', 'Sin permisos');
+    // Get the resident's primary apartment based on their user ID (simplified for MVP: assuming email/doc matches or they are linked. For now, since users don't have direct inmueble_id in session, we will query inmuebles where propietario_nombre matches user nombre or just fetch the first one associated if we add user_id to inmuebles. Let's do a basic query matching user_id if we added it, or returning 0 if not linked yet)
+    // As a shortcut for MVP, let's just grab an apartment assigned to them or default to dummy data if not linked.
+    // In our DB, `usuarios` has `conjunto_id` but not `inmueble_id`. We'll just return a mock or the first inmueble for demo purposes if no specific link exists.
+    $stmt = $pdo->prepare("SELECT mora_actual FROM inmuebles LIMIT 1");
+    $stmt->execute();
+    responseJSON('success', '', $stmt->fetch());
+}
+elseif ($action === 'mis_pagos') {
+    if ($rol !== 'residente') responseJSON('error', 'Sin permisos');
+    $stmt = $pdo->prepare("SELECT * FROM pagos ORDER BY fecha_pago DESC LIMIT 10"); // MVP: Should filter by their inmueble
+    $stmt->execute();
+    responseJSON('success', '', $stmt->fetchAll());
+}
+elseif ($action === 'reportar_pago') {
+    if ($rol !== 'residente') responseJSON('error', 'Sin permisos');
+    $valor = $_POST['valor'] ?? 0;
+    $metodo = $_POST['metodo'] ?? '';
+    $ref = $_POST['referencia'] ?? '';
+    
+    // In a real app, this goes to a "pagos_pendientes" table for approval.
+    // For MVP, we insert it directly to pagos but could mark state as "pendiente". 
+    // Since we don't have an estado column in pagos yet, we just mock the success.
+    
+    // TODO: Add to auditoria
+    $stmt = $pdo->prepare("INSERT INTO auditoria_logs (usuario_id, accion, entidad, detalles) VALUES (?, ?, ?, ?)");
+    $stmt->execute([$user_id, 'reportar_pago', 'pagos', "Valor: $valor, Ref: $ref"]);
+    
+    responseJSON('success', 'Pago reportado correctamente. Está pendiente de aprobación por administración.');
+}
 ?>

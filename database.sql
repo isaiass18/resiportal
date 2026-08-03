@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS zonas_sociales (
     conjunto_id INT NOT NULL,
     nombre VARCHAR(100) NOT NULL,
     tarifa DECIMAL(10,2) DEFAULT 0,
+    aforo INT DEFAULT 0,
+    horarios VARCHAR(255),
+    reglamento TEXT,
     FOREIGN KEY (conjunto_id) REFERENCES conjuntos(id) ON DELETE CASCADE
 );
 

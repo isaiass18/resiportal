@@ -51,17 +51,55 @@ document.getElementById('logoutBtn')?.addEventListener('click', async () => {
 
 function initApp() {
     setupNavigation();
-    loadView('dashboard'); // Default view
+    
+    // Default view based on role
+    if (currentUser.rol === 'vigilante') {
+        loadView('porteria');
+    } else if (currentUser.rol === 'residente') {
+        loadView('home-residente');
+    } else {
+        loadView('dashboard');
+    }
+
+    // Mobile Menu Toggle
+    document.getElementById('menuToggle')?.addEventListener('click', () => {
+        document.getElementById('sidebar').classList.toggle('open');
+    });
 }
 
 function setupNavigation() {
     const navLinks = document.querySelectorAll('.nav-links li');
     navLinks.forEach(link => {
+        const viewName = link.getAttribute('data-view');
+        
+        // Hide/Show links based on role
+        if (currentUser.rol === 'vigilante') {
+            if (viewName !== 'porteria') {
+                link.style.display = 'none';
+            } else {
+                link.classList.add('active');
+            }
+        } else if (currentUser.rol === 'residente') {
+            const allowed = ['home-residente', 'mis-pagos', 'zonas', 'reclamaciones'];
+            if (!allowed.includes(viewName)) {
+                link.style.display = 'none';
+            }
+        } else {
+            // Admin sees all except resident specific views
+            if (['home-residente', 'mis-pagos'].includes(viewName)) {
+                link.style.display = 'none';
+            }
+        }
+
         link.addEventListener('click', (e) => {
             navLinks.forEach(l => l.classList.remove('active'));
             e.currentTarget.classList.add('active');
-            const viewName = e.currentTarget.getAttribute('data-view');
             loadView(viewName);
+            
+            // Close sidebar on mobile after clicking
+            if (window.innerWidth <= 768) {
+                document.getElementById('sidebar').classList.remove('open');
+            }
         });
     });
 }
@@ -80,6 +118,8 @@ function loadView(viewName) {
         if (viewName === 'porteria') loadPorteria();
         if (viewName === 'finanzas') loadFinanzas();
         if (viewName === 'comunicaciones') loadComunicaciones();
+        if (viewName === 'home-residente') loadHomeResidente();
+        if (viewName === 'mis-pagos') loadMisPagos();
     } else {
         container.innerHTML = `<div class="view card"><h2>En construcción</h2></div>`;
     }
@@ -87,7 +127,6 @@ function loadView(viewName) {
 
 // Global Export Function
 function exportCSV() {
-    // Basic export for testing/MVP purposes
     alert('Exportando datos básicos a CSV...');
     let csv = "ID,Nombre,Apartamento\n1,Juan Perez,101\n2,Maria Lopez,102";
     let blob = new Blob([csv], { type: 'text/csv' });
@@ -99,6 +138,63 @@ function exportCSV() {
 }
 
 // Data Loaders
+async function loadHomeResidente() {
+    // Comunicados (Cartelera)
+    const resC = await fetch('api/comunicaciones.php?action=list_comunicados');
+    const dataC = await resC.json();
+    if(dataC.status === 'success') {
+        const div = document.getElementById('residente-comunicados');
+        div.innerHTML = dataC.data.length === 0 ? '<p>No hay comunicados recientes.</p>' :
+            dataC.data.map(c => `
+                <div style="border-left: 4px solid var(--primary); padding-left: 12px; margin-bottom: 12px;">
+                    <h4 style="margin:0">${c.titulo}</h4>
+                    <p style="margin:4px 0; font-size:14px; color:#555;">${c.contenido}</p>
+                    <small style="color:#888;">${c.fecha_publicacion}</small>
+                </div>
+            `).join('');
+    }
+
+    // Deuda
+    const res = await fetch('api/finanzas.php?action=mi_deuda');
+    const data = await res.json();
+    if(data.status === 'success' && data.data) {
+        document.getElementById('residente-mora').innerText = `$${data.data.mora_actual}`;
+    } else {
+        document.getElementById('residente-mora').innerText = `$0.00`;
+    }
+}
+
+async function loadMisPagos() {
+    // Pagos del residente
+    const res = await fetch('api/finanzas.php?action=mis_pagos');
+    const data = await res.json();
+    if(data.status === 'success') {
+        const tb = document.getElementById('tb-mis-pagos');
+        tb.innerHTML = data.data.length === 0 ? '<tr><td colspan="5">No tienes pagos registrados</td></tr>' :
+            data.data.map(p => `<tr><td>${p.fecha_pago}</td><td><b>$${p.valor}</b></td><td>${p.metodo_pago}</td><td>${p.referencia || 'N/A'}</td><td>${p.estado || 'Aprobado'}</td></tr>`).join('');
+    }
+
+    const form = document.getElementById('formReportarPago');
+    if (form) {
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('action', 'reportar_pago');
+            formData.append('valor', document.getElementById('repPagoValor').value);
+            formData.append('referencia', document.getElementById('repPagoRef').value);
+            formData.append('metodo', document.getElementById('repPagoMetodo').value);
+            
+            const r = await fetch('api/finanzas.php', {method: 'POST', body: formData});
+            const d = await r.json();
+            alert(d.message);
+            if (d.status === 'success') {
+                document.getElementById('modalReportarPago').classList.add('hidden');
+                loadMisPagos();
+            }
+        };
+    }
+}
+
 async function loadComunicaciones() {
     // Comunicados
     const resC = await fetch('api/comunicaciones.php?action=list_comunicados');
@@ -236,6 +332,28 @@ async function loadUsuarios() {
     if(data.status === 'success') {
         tbody.innerHTML = data.data.map(u => `<tr><td>${u.documento}</td><td>${u.nombre}</td><td>${u.email}</td><td><span style="padding:4px 8px; background:var(--primary-light); color:var(--primary); border-radius:12px; font-size:12px; text-transform:uppercase;">${u.rol}</span></td></tr>`).join('');
     }
+
+    const form = document.getElementById('formCrearUsuario');
+    if (form) {
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('action', 'crear_usuario');
+            formData.append('documento', document.getElementById('usrDoc').value);
+            formData.append('nombre', document.getElementById('usrNombre').value);
+            formData.append('email', document.getElementById('usrEmail').value);
+            formData.append('password', document.getElementById('usrPass').value);
+            formData.append('rol', document.getElementById('usrRol').value);
+            
+            const r = await fetch('api/users.php', {method: 'POST', body: formData});
+            const d = await r.json();
+            alert(d.message);
+            if (d.status === 'success') {
+                document.getElementById('modalUsuario').classList.add('hidden');
+                loadUsuarios();
+            }
+        };
+    }
 }
 
 async function loadInmuebles() {
@@ -253,10 +371,59 @@ async function loadZonas() {
     const tbody = document.getElementById('tb-zonas');
     if(data.status === 'success') {
         if(data.data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="4">No hay reservas</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5">No hay reservas</td></tr>`;
         } else {
-            tbody.innerHTML = data.data.map(z => `<tr><td>${z.zona_nombre}</td><td>${z.usuario_nombre}</td><td>${z.fecha_reserva}</td><td>${z.estado}</td></tr>`).join('');
+            tbody.innerHTML = data.data.map(z => {
+                let acciones = '';
+                if (currentUser.rol === 'admin' && z.estado === 'Pendiente') {
+                    acciones = `<button class="btn" style="background:#16a34a; color:white; padding:4px 8px; font-size:12px; margin-right:4px;" onclick="cambiarEstadoReserva(${z.id}, 'Aprobada')">Aprobar</button>
+                                <button class="btn" style="background:#dc2626; color:white; padding:4px 8px; font-size:12px;" onclick="cambiarEstadoReserva(${z.id}, 'Rechazada')">Rechazar</button>`;
+                } else if (currentUser.rol === 'admin') {
+                    acciones = `<span style="font-size:12px; color:#888;">Resuelta</span>`;
+                } else {
+                    acciones = `<span style="font-size:12px; color:#888;">-</span>`;
+                }
+                
+                return `<tr><td>${z.zona_nombre}</td><td>${z.usuario_nombre || 'Tú'}</td><td>${z.fecha_reserva}</td><td>${z.estado}</td><td>${acciones}</td></tr>`;
+            }).join('');
         }
+    }
+
+    const form = document.getElementById('formCrearZona');
+    if (form) {
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('action', 'crear_zona');
+            formData.append('nombre', document.getElementById('zonaNombre').value);
+            formData.append('aforo', document.getElementById('zonaAforo').value);
+            formData.append('horarios', document.getElementById('zonaHorarios').value);
+            formData.append('reglamento', document.getElementById('zonaReglamento').value);
+            
+            const r = await fetch('api/zonas.php', {method: 'POST', body: formData});
+            const d = await r.json();
+            alert(d.message);
+            if (d.status === 'success') {
+                document.getElementById('modalZona').classList.add('hidden');
+                loadZonas();
+            }
+        };
+    }
+}
+
+window.cambiarEstadoReserva = async function(id, estado) {
+    if(!confirm(`¿Seguro que quieres marcar esta reserva como ${estado}?`)) return;
+    const formData = new FormData();
+    formData.append('action', 'estado_reserva');
+    formData.append('reserva_id', id);
+    formData.append('estado', estado);
+    
+    const r = await fetch('api/zonas.php', {method: 'POST', body: formData});
+    const d = await r.json();
+    if(d.status === 'success') {
+        loadZonas();
+    } else {
+        alert(d.message);
     }
 }
 

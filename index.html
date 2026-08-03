@@ -34,6 +34,8 @@
             </div>
             <ul class="nav-links">
                 <li class="active" data-view="dashboard"><i class="fa-solid fa-house"></i> <span>Dashboard</span></li>
+                <li data-view="home-residente"><i class="fa-solid fa-house-user"></i> <span>Inicio (Cartelera)</span></li>
+                <li data-view="mis-pagos"><i class="fa-solid fa-file-invoice"></i> <span>Mis Pagos</span></li>
                 <li data-view="porteria"><i class="fa-solid fa-shield-halved"></i> <span>Portería / Visitas</span></li>
                 <li data-view="finanzas"><i class="fa-solid fa-money-bill-wave"></i> <span>Finanzas / Cartera</span></li>
                 <li data-view="comunicaciones"><i class="fa-solid fa-bullhorn"></i> <span>Comunicaciones & Docs</span></li>
@@ -51,9 +53,12 @@
         <!-- Main Content -->
         <main class="main-content">
             <header class="topbar">
-                <div class="search-bar">
-                    <i class="fa-solid fa-search"></i>
-                    <input type="text" placeholder="Buscar residentes, inmuebles...">
+                <div style="display:flex; align-items:center; gap:16px;">
+                    <button id="menuToggle" class="menu-toggle"><i class="fa-solid fa-bars"></i></button>
+                    <div class="search-bar">
+                        <i class="fa-solid fa-search"></i>
+                        <input type="text" placeholder="Buscar residentes, inmuebles...">
+                    </div>
                 </div>
                 <div class="user-profile">
                     <div class="notifications">
@@ -106,6 +111,64 @@
                         <p class="stat-number">18</p>
                     </div>
                 </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="tpl-home-residente">
+        <div class="view">
+            <h1 class="page-title">Bienvenido a ResiPortal</h1>
+            <div style="display:grid; grid-template-columns: 2fr 1fr; gap:24px;">
+                <div>
+                    <h3>Cartelera (Comunicados Oficiales)</h3>
+                    <div class="card" id="residente-comunicados" style="display:flex; flex-direction:column; gap:16px;">
+                        Cargando comunicados...
+                    </div>
+                </div>
+                <div>
+                    <h3>Mi Estado de Cuenta</h3>
+                    <div class="card" style="text-align:center; padding:32px;">
+                        <h4 style="color:var(--text-muted); margin-bottom:8px;">Deuda Actual (Mora)</h4>
+                        <p style="font-size:36px; font-weight:700; color:#dc2626;" id="residente-mora">Cargando...</p>
+                        <button class="btn btn-primary mt-4" style="width:100%" onclick="document.querySelector('[data-view=\'mis-pagos\']').click()">Reportar un Pago</button>
+                    </div>
+                    <h3 class="mt-4">Accesos Rápidos</h3>
+                    <div class="card" style="display:flex; flex-direction:column; gap:12px;">
+                        <button class="btn btn-ghost" onclick="document.querySelector('[data-view=\'zonas\']').click()"><i class="fa-solid fa-calendar-plus"></i> Reservar Zona Social</button>
+                        <button class="btn btn-ghost" onclick="document.querySelector('[data-view=\'reclamaciones\']').click()"><i class="fa-solid fa-bullhorn"></i> Radicar PQRS</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="tpl-mis-pagos">
+        <div class="view">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+                <h1 class="page-title" style="margin:0">Mis Pagos</h1>
+                <button class="btn btn-primary" onclick="document.getElementById('modalReportarPago').classList.remove('hidden')"><i class="fa-solid fa-cloud-arrow-up"></i> Reportar Nuevo Pago</button>
+            </div>
+            
+            <div id="modalReportarPago" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
+                <h3>Reportar Consignación o Transferencia</h3>
+                <form id="formReportarPago" style="display:flex; gap:16px; margin-top:16px;">
+                    <input type="number" id="repPagoValor" placeholder="Valor Consignado ($)" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
+                    <input type="text" id="repPagoRef" placeholder="Número de Referencia" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
+                    <select id="repPagoMetodo" style="padding:8px; border-radius:4px; border:1px solid #ccc;">
+                        <option value="transferencia">Transferencia Bancaria</option>
+                        <option value="consignacion">Consignación en Taquilla</option>
+                    </select>
+                    <button type="submit" class="btn btn-primary">Enviar Reporte</button>
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalReportarPago').classList.add('hidden')">Cancelar</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3>Historial de Pagos</h3>
+                <table class="data-table mt-4">
+                    <thead><tr><th>Fecha</th><th>Valor</th><th>Método</th><th>Referencia</th><th>Estado</th></tr></thead>
+                    <tbody id="tb-mis-pagos"><tr><td colspan="5">Cargando...</td></tr></tbody>
+                </table>
             </div>
         </div>
     </template>
@@ -256,9 +319,34 @@
     <template id="tpl-usuarios">
         <div class="view">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
-                <h1 class="page-title" style="margin:0">Usuarios</h1>
-                <button class="btn btn-primary"><i class="fa-solid fa-plus"></i> Nuevo Usuario</button>
+                <h1 class="page-title" style="margin:0">Usuarios del Sistema</h1>
+                <button class="btn btn-primary" onclick="document.getElementById('modalUsuario').classList.remove('hidden')"><i class="fa-solid fa-plus"></i> Nuevo Usuario</button>
             </div>
+
+            <div id="modalUsuario" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
+                <h3>Crear / Registrar Usuario</h3>
+                <form id="formCrearUsuario" style="display:flex; flex-direction:column; gap:16px; margin-top:16px;">
+                    <div style="display:flex; gap:16px;">
+                        <input type="text" id="usrDoc" placeholder="Documento" required style="flex:1; padding:8px; border-radius:4px; border:1px solid #ccc;">
+                        <input type="text" id="usrNombre" placeholder="Nombre Completo" required style="flex:2; padding:8px; border-radius:4px; border:1px solid #ccc;">
+                    </div>
+                    <div style="display:flex; gap:16px;">
+                        <input type="email" id="usrEmail" placeholder="Correo Electrónico" required style="flex:2; padding:8px; border-radius:4px; border:1px solid #ccc;">
+                        <input type="password" id="usrPass" placeholder="Contraseña Temporal" required style="flex:1; padding:8px; border-radius:4px; border:1px solid #ccc;">
+                    </div>
+                    <select id="usrRol" style="padding:8px; border-radius:4px; border:1px solid #ccc;" required>
+                        <option value="">-- Seleccionar Rol --</option>
+                        <option value="residente">Residente / Propietario</option>
+                        <option value="vigilante">Vigilante (Portería)</option>
+                        <option value="admin">Administrador</option>
+                    </select>
+                    <div style="display:flex; gap:8px;">
+                        <button type="submit" class="btn btn-primary">Registrar Usuario</button>
+                        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalUsuario').classList.add('hidden')">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+
             <div class="card">
                 <table class="data-table">
                     <thead><tr><th>Documento</th><th>Nombre</th><th>Email</th><th>Rol</th></tr></thead>
@@ -284,12 +372,30 @@
         <div class="view">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
                 <h1 class="page-title" style="margin:0">Zonas Sociales y Reservas</h1>
-                <button class="btn btn-primary"><i class="fa-solid fa-calendar-plus"></i> Nueva Reserva</button>
+                <button class="btn btn-primary" onclick="document.getElementById('modalZona').classList.remove('hidden')"><i class="fa-solid fa-plus"></i> Nueva Zona Social</button>
             </div>
+
+            <div id="modalZona" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
+                <h3>Configurar Zona Social</h3>
+                <form id="formCrearZona" style="display:flex; flex-direction:column; gap:16px; margin-top:16px;">
+                    <div style="display:flex; gap:16px;">
+                        <input type="text" id="zonaNombre" placeholder="Nombre (ej. Piscina, BBQ)" required style="flex:2; padding:8px; border-radius:4px; border:1px solid #ccc;">
+                        <input type="number" id="zonaAforo" placeholder="Aforo Máximo" required style="flex:1; padding:8px; border-radius:4px; border:1px solid #ccc;">
+                    </div>
+                    <input type="text" id="zonaHorarios" placeholder="Horarios permitidos (ej. 8:00 AM - 10:00 PM)" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
+                    <textarea id="zonaReglamento" placeholder="Reglamento y Condiciones de Uso..." required style="padding:8px; border-radius:4px; border:1px solid #ccc; min-height:80px;"></textarea>
+                    <div style="display:flex; gap:8px;">
+                        <button type="submit" class="btn btn-primary">Crear Zona</button>
+                        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalZona').classList.add('hidden')">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+
             <div class="card">
-                <table class="data-table">
-                    <thead><tr><th>Zona</th><th>Usuario</th><th>Fecha</th><th>Estado</th></tr></thead>
-                    <tbody id="tb-zonas"><tr><td colspan="4">Cargando...</td></tr></tbody>
+                <h3>Listado de Reservas</h3>
+                <table class="data-table mt-4">
+                    <thead><tr><th>Zona</th><th>Residente</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr></thead>
+                    <tbody id="tb-zonas"><tr><td colspan="5">Cargando...</td></tr></tbody>
                 </table>
             </div>
         </div>
