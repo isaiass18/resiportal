@@ -3820,3 +3820,203 @@ async function abrirConfiguracionCuotasAdministracion() {
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     window.setTimeout(() => panel.querySelector('#cuotaBusqueda')?.focus(), 350);
 }
+
+
+/* Estabilidad de API y experiencia de operación (2026-08-10). */
+(() => {
+    const mensajeHttp = status => {
+        if (status === 413) return 'La carga supera el límite permitido por el servidor. Reduce el tamaño del archivo o solicita a administración ajustar el límite de cargas.';
+        if (status >= 500) return 'El servidor no pudo completar la operación. Intenta de nuevo; si continúa, informa a la administración.';
+        if (status === 401 || status === 403) return 'Tu sesión no tiene permisos para esta operación.';
+        return `No fue posible completar la operación (HTTP ${status || 'sin respuesta'}).`;
+    };
+
+    // Todas las llamadas existentes usan response.json(). Al leer el cuerpo de forma segura,
+    // una página HTML de Nginx/PHP (413/500) se convierte en un mensaje útil y no en SyntaxError.
+    Response.prototype.json = async function () {
+        const texto = await this.text();
+        if (!texto.trim()) return { status: 'error', message: mensajeHttp(this.status), data: [] };
+        try {
+            const resultado = JSON.parse(texto);
+            return this.ok || resultado?.status === 'error'
+                ? resultado
+                : { status: 'error', message: resultado?.message || mensajeHttp(this.status), data: resultado?.data || [] };
+        } catch (_) {
+            return { status: 'error', message: mensajeHttp(this.status), data: [] };
+        }
+    };
+})();
+
+// Evita que un formulario sin controlador específico recargue la página y devuelva al panel.
+document.addEventListener('submit', event => {
+    if (event.target.closest('#app')) event.preventDefault();
+}, true);
+
+const cargarVistaConMemoria = window.loadView;
+window.loadView = function (vista) {
+    if (vista && currentUser?.id) sessionStorage.setItem(`resiportalVistaActiva:${currentUser.id}`, vista);
+    return cargarVistaConMemoria(vista);
+};
+const iniciarAppConMemoria = initApp;
+initApp = function () {
+    iniciarAppConMemoria();
+    const vista = currentUser?.id ? sessionStorage.getItem(`resiportalVistaActiva:${currentUser.id}`) : null;
+    const permitidas = currentUser?.rol === 'vigilante'
+        ? ['porteria', 'zonas', 'perfil']
+        : currentUser?.rol === 'residente' || currentUser?.rol === 'propietario'
+            ? ['home-residente', 'mis-pagos', 'zonas', 'reclamaciones', 'perfil']
+            : null;
+    if (vista && (!permitidas || permitidas.includes(vista))) window.loadView(vista);
+};
+
+window.cancelarMiReserva = async function (reservaId) {
+    const confirmar = window.confirmarAccion
+        ? await window.confirmarAccion({ titulo: '¿Cancelar reserva?', texto: 'La franja quedará disponible y la reserva se conservará en el historial.', confirmar: 'Cancelar reserva', icono: 'warning' })
+        : window.confirm('¿Cancelar esta reserva?');
+    if (!confirmar) return;
+    const datos = new FormData();
+    datos.append('action', 'cancelar_reserva');
+    datos.append('reserva_id', reservaId);
+    const respuesta = await fetch('api/zonas.php', { method: 'POST', body: datos });
+    const resultado = await respuesta.json();
+    window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+    if (resultado.status === 'success') await loadZonas();
+};
+
+renderTablaReservas = function (esInterno) {
+    const tabla = document.getElementById('tb-zonas');
+    if (!tabla) return;
+    tabla.innerHTML = reservasZonasActuales.length ? reservasZonasActuales.map(reserva => {
+        const estado = escapeHtml(reserva.estado);
+        const activa = ['pendiente', 'aprobada'].includes(reserva.estado);
+        const acciones = esInterno
+            ? `<button class="btn btn-ghost internal-reservation-action" onclick="window.abrirReservaInterna(${Number(reserva.id)})">Ver / gestionar</button>`
+            : activa ? `<button class="btn btn-ghost internal-reservation-action" onclick="window.cancelarMiReserva(${Number(reserva.id)})"><i class="fa-solid fa-ban"></i> Cancelar</button>` : '—';
+        return `<tr><td>${escapeHtml(reserva.zona_nombre)}</td><td><strong>${escapeHtml(reserva.inmueble_etiqueta || 'Histórico sin inmueble')}</strong></td><td>${formatDate(reserva.fecha_reserva)}</td><td>${escapeHtml(etiquetaHorarioReserva(reserva))}</td><td><span class="reserva-estado estado-${estado}">${estado}</span></td><td>${acciones}</td></tr>`;
+    }).join('') : '<tr><td colspan="6">No hay reservas registradas.</td></tr>';
+};
+
+function completarFinReservaResidente(inicio, zona, fin) {
+    if (typeof asignarFranjaAutomatica === 'function') return asignarFranjaAutomatica(inicio.value, zona, inicio, fin);
+    const [hora, minuto] = inicio.value.split(':').map(Number);
+    const total = hora * 60 + minuto + (Number(zona.max_horas_reserva || 1) * 60);
+    fin.value = `${String(Math.min(23, Math.floor(total / 60))).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+window.abrirReservaResidente = function (fecha, hora) {
+    const zona = zonasReservaActuales.find(item => Number(item.id) === Number(document.getElementById('reservaZonaId')?.value));
+    if (!zona) return window.notificar('Selecciona una zona antes de elegir una franja.', 'warning');
+    let modal = document.getElementById('modalReservaResidente');
+    if (!modal) {
+        document.body.insertAdjacentHTML('beforeend', '<div id="modalReservaResidente" class="login-modal internal-reservation-modal hidden"></div>');
+        modal = document.getElementById('modalReservaResidente');
+    }
+    modal.innerHTML = `<div class="login-box internal-reservation-dialog"><button class="close-btn" type="button" onclick="document.getElementById('modalReservaResidente').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button><p class="section-kicker">Reserva de zona</p><h2>${escapeHtml(zona.nombre)}</h2><p class="muted">Completa tu inmueble y confirma la franja. La reserva se aprobará automáticamente si está disponible.</p><form id="formReservaResidenteModal" class="internal-reservation-form"><label>Inmueble<select name="inmueble_id" required><option value="">Selecciona tu inmueble</option>${inmueblesReservaActuales.map(inmueble => `<option value="${Number(inmueble.id)}">${escapeHtml(inmueble.etiqueta)}</option>`).join('')}</select></label><div class="internal-reservation-time-grid"><label>Fecha<input name="fecha_reserva" type="date" min="${fechaMinimaReserva()}" value="${fecha}" required></label><label>Inicio<input name="hora_inicio" type="time" value="${hora}" required></label><label>Fin<input name="hora_fin" type="time" required></label></div><button class="btn btn-primary" type="submit"><i class="fa-solid fa-calendar-check"></i> Confirmar reserva</button></form></div>`;
+    const form = modal.querySelector('form');
+    const inicio = form.elements.hora_inicio;
+    const fin = form.elements.hora_fin;
+    completarFinReservaResidente(inicio, zona, fin);
+    inicio.addEventListener('change', () => completarFinReservaResidente(inicio, zona, fin));
+    form.onsubmit = async event => {
+        event.preventDefault();
+        const datos = new FormData(form);
+        datos.append('action', 'crear_reserva');
+        datos.append('zona_id', zona.id);
+        const respuesta = await fetch('api/zonas.php', { method: 'POST', body: datos });
+        const resultado = await respuesta.json();
+        window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+        if (resultado.status === 'success') { modal.classList.add('hidden'); await loadZonas(); }
+    };
+    modal.classList.remove('hidden');
+};
+
+renderDisponibilidadResidente = async function () {
+    const selectZona = document.getElementById('reservaZonaId');
+    const zona = zonasReservaActuales.find(item => Number(item.id) === Number(selectZona?.value));
+    if (!selectZona || !zona || !window.FullCalendar) return;
+    let calendario = document.getElementById('calendar-disponibilidad-residente');
+    if (!calendario) {
+        calendario = document.createElement('section');
+        calendario.id = 'calendar-disponibilidad-residente';
+        calendario.className = 'resident-zone-calendar';
+        document.getElementById('calendar')?.closest('.card')?.insertAdjacentElement('beforebegin', calendario);
+    }
+    const horario = horarioServicioZona(zona);
+    if (!horario) { calendario.innerHTML = '<p class="empty-state">La zona no tiene un horario de servicio válido.</p>'; return; }
+    calendario.innerHTML = `<div class="resident-availability-header"><div><p class="section-kicker">Disponibilidad por horas</p><h3>Agenda: ${escapeHtml(zona.nombre)}</h3><p>Selecciona una franja verde para completar tu reserva.</p></div>${leyendaHorarioCalendario()}</div><div class="resident-zone-calendar-body"></div>`;
+    const respuesta = await fetch(`api/zonas.php?action=zona_disponibilidad&zona_id=${encodeURIComponent(zona.id)}`);
+    const resultado = await respuesta.json();
+    const cuerpo = calendario.querySelector('.resident-zone-calendar-body');
+    if (resultado.status !== 'success') { cuerpo.innerHTML = `<p class="muted">${escapeHtml(resultado.message)}</p>`; return; }
+    if (window.residentAvailabilityCalendar) window.residentAvailabilityCalendar.destroy();
+    window.residentAvailabilityCalendar = new FullCalendar.Calendar(cuerpo, {
+        initialView: 'timeGridWeek', locale: 'es', height: 'auto',
+        headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' },
+        ...opcionesCalendarioHorario(zona),
+        events: (resultado.data.reservas || []).map(reserva => eventoReserva(reserva, false)),
+        dateClick: info => {
+            const fecha = fechaLocal(info.date);
+            if (fecha < fechaMinimaReserva()) return window.notificar('Selecciona una fecha futura para reservar.', 'warning');
+            if (!momentoEnHorarioServicio(info.date, horario)) return window.notificar(`La zona está fuera de servicio: ${formatearHorarioServicio(horario)}.`, 'warning');
+            window.abrirReservaResidente(fecha, horaInicialDesdeClick(info, horario));
+        }
+    });
+    window.residentAvailabilityCalendar.render();
+};
+
+const cargarPorteriaConAdjuntos = loadPorteria;
+loadPorteria = async function () {
+    await cargarPorteriaConAdjuntos();
+    const respuesta = await fetch('api/porteria.php?action=list_minuta');
+    const resultado = await respuesta.json();
+    const tabla = document.getElementById('tb-minuta');
+    const cabecera = tabla?.closest('table')?.querySelector('thead tr');
+    if (!tabla || resultado.status !== 'success') return;
+    if (cabecera) cabecera.innerHTML = '<th>Fecha</th><th>Vigilante</th><th>Asunto</th><th>Adjunto</th>';
+    tabla.innerHTML = resultado.data.length ? resultado.data.map(novedad => `<tr><td>${escapeHtml(novedad.fecha_operativa || novedad.fecha_registro)}</td><td>${escapeHtml(novedad.vigilante)}</td><td>${escapeHtml(novedad.asunto)}</td><td>${novedad.adjuntos?.length ? novedad.adjuntos.map(adjunto => `<a href="api/porteria.php?action=ver_adjunto_novedad&adjunto_id=${Number(adjunto.id)}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip"></i> ${escapeHtml(adjunto.nombre_original)}</a>`).join('<br>') : '—'}</td></tr>`).join('') : '<tr><td colspan="4">Minuta vacía.</td></tr>';
+};
+
+abrirModalPorteria = function (tipo) {
+    const modal = document.getElementById('modalPorteria');
+    if (!modal) return;
+    const form = document.getElementById('formPorteria');
+    const opciones = modal.dataset.opciones || '';
+    const fechaActual = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const estructuras = {
+        visita: ['Registrar visita', `<input name="nombre" placeholder="Nombre del visitante" required><input name="documento" placeholder="Documento (opcional)"><input name="vehiculo_placa" placeholder="Placa (opcional)"><select name="inmueble_id" required><option value="">Unidad visitada…</option>${opciones}</select>`],
+        paquete: ['Recibir paquete', `<select name="inmueble_id" required><option value="">Unidad destino…</option>${opciones}</select><input name="transportadora" placeholder="Transportadora" required><textarea name="descripcion" placeholder="Descripción (opcional)"></textarea>`],
+        minuta: ['Registrar novedad', `<input name="asunto" maxlength="150" placeholder="Asunto" required><input name="fecha_novedad" type="datetime-local" value="${fechaActual}" required><textarea name="novedad" placeholder="Detalle de la novedad" required></textarea><label class="pqrs-file-field">Adjunto opcional<input name="adjunto" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"><small>JPG, PNG, WEBP o PDF; máximo 5 MB.</small></label>`]
+    };
+    const [titulo, campos] = estructuras[tipo];
+    document.getElementById('porteriaModalTitle').textContent = titulo;
+    form.innerHTML = `<input type="hidden" name="action" value="${tipo === 'visita' ? 'registrar_visita' : tipo === 'paquete' ? 'recibir_paquete' : 'registrar_novedad'}">${campos}<button class="btn btn-primary" type="submit">Guardar</button>`;
+    modal.classList.remove('hidden');
+};
+
+document.addEventListener('submit', async event => {
+    const form = event.target;
+    if (form.id !== 'formPorteria') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const respuesta = await fetch('api/porteria.php', { method: 'POST', body: new FormData(form) });
+    const resultado = await respuesta.json();
+    window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+    if (resultado.status === 'success') { document.getElementById('modalPorteria')?.classList.add('hidden'); await loadPorteria(); }
+}, true);
+
+function agregarOjoContrasena(input) {
+    if (!input || input.dataset.ojoContrasena || input.id === 'loginPassword' || input.closest('.password-visibility-wrap')) return;
+    input.dataset.ojoContrasena = '1';
+    const contenedor = document.createElement('span');
+    contenedor.className = 'password-visibility-wrap';
+    input.parentNode.insertBefore(contenedor, input);
+    contenedor.appendChild(input);
+    const boton = document.createElement('button');
+    boton.type = 'button'; boton.className = 'password-visibility-toggle'; boton.setAttribute('aria-label', 'Mostrar contraseña');
+    boton.innerHTML = '<i class="fa-solid fa-eye"></i>';
+    boton.onclick = () => { const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; boton.setAttribute('aria-label', visible ? 'Mostrar contraseña' : 'Ocultar contraseña'); boton.innerHTML = `<i class="fa-solid fa-eye${visible ? '' : '-slash'}"></i>`; };
+    contenedor.appendChild(boton);
+}
+function prepararOjosContrasena(nodo = document) { nodo.querySelectorAll?.('input[type="password"]').forEach(agregarOjoContrasena); }
+prepararOjosContrasena();
+new MutationObserver(registros => registros.forEach(registro => registro.addedNodes.forEach(nodo => { if (nodo.nodeType === Node.ELEMENT_NODE) { if (nodo.matches?.('input[type="password"]')) agregarOjoContrasena(nodo); prepararOjosContrasena(nodo); } }))).observe(document.body, { childList: true, subtree: true });

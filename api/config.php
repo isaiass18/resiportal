@@ -37,14 +37,32 @@ try {
     ]));
 }
 
-// Funciones de utilidad globales
+// Las APIs siempre deben responder JSON, incluso ante una excepción no controlada.
+// Evita que la interfaz reciba una página HTML de PHP/Nginx y falle al parsearla.
+ini_set('display_errors', '0');
+
 function responseJSON($status, $message, $data = [])
 {
-    header('Content-Type: application/json');
+    header('Content-Type: application/json; charset=utf-8');
     echo json_encode([
         'status' => $status,
         'message' => $message,
         'data' => $data
-    ]);
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 }
+
+set_exception_handler(static function (Throwable $error): void {
+    error_log(sprintf('ResiPortal API error: %s in %s:%d', $error->getMessage(), $error->getFile(), $error->getLine()));
+    if (!headers_sent()) http_response_code(500);
+    responseJSON('error', 'No fue posible completar la operación. Intenta de nuevo o contacta a la administración.');
+});
+
+register_shutdown_function(static function (): void {
+    $error = error_get_last();
+    if (!$error || !in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true) || headers_sent()) return;
+    error_log(sprintf('ResiPortal fatal error: %s in %s:%d', $error['message'], $error['file'], $error['line']));
+    http_response_code(500);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['status' => 'error', 'message' => 'El servidor no pudo completar la operación.', 'data' => []], JSON_UNESCAPED_UNICODE);
+});

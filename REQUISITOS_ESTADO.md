@@ -129,3 +129,12 @@
 ## Notas de migración
 
 La migración `MIGRACION_20260803_MEJORAS_PORTAL.sql` aplica los cambios previos de esquema para instalaciones existentes. La primera ejecución en producción falló porque MySQL 8.4.10 no acepta `ADD COLUMN IF NOT EXISTS`; se aplicaron después los `ALTER TABLE` compatibles. Las migraciones `MIGRACION_20260804_CUOTAS_VIGILANTES.sql` y `MIGRACION_20260805_PARQUEADEROS.sql` se ejecutan una sola vez después de respaldo; no añaden índices de cuotas sobre datos históricos para no alterar registros existentes.
+
+
+## Cambios locales pendientes de despliegue — 2026-08-10
+
+- Las reservas realizadas por residente o propietario pasan a estado **aprobada** dentro de la misma transacción que valida disponibilidad, horario y límites; la tabla de “Mis reservas” permite cancelarlas conservando el historial.
+- Al seleccionar una franja disponible del calendario de residente se abre un modal para completar el inmueble y confirmar fecha/horas, con fin automático según la política de la zona.
+- La minuta de vigilancia solicita fecha/hora operativa —campo obligatorio en la API— y permite adjuntar una imagen JPG/PNG/WEBP o PDF de hasta 5 MB. Requiere ejecutar `MIGRACION_20260810_ESTABILIDAD_PORTAL.sql` y preparar `uploads_privados/novedades`.
+- Las respuestas HTML de Nginx/PHP ante 413/500 se transforman en mensajes visibles, evitando el `SyntaxError` de JSON en el navegador. El 413 se resuelve configurando los límites de Nginx/PHP-FPM documentados en `DESPLIEGUE_SERVIDOR.md`.
+- SweetAlert queda por encima de todos los modales y los campos de contraseña existentes o creados dinámicamente incluyen un control de mostrar/ocultar.

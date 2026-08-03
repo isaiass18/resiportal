@@ -156,11 +156,13 @@ function crearReservaHoraria(PDO $pdo, int $conjuntoId, int $actorId, string $ro
             throw new Exception("Este inmueble ya alcanzó el máximo diario de {$zona['max_reservas_diarias_inmueble']} reserva(s) para esta zona");
         }
 
-        $estado = $interna ? 'aprobada' : 'pendiente';
+        // Las reservas solicitadas desde el portal se aprueban al instante; la agenda ya
+        // validó disponibilidad, límites, inmueble y horario dentro de esta transacción.
+        $estado = 'aprobada';
         $insertar = $pdo->prepare('INSERT INTO reservas (zona_id, usuario_id, inmueble_id, fecha_reserva, hora_inicio, hora_fin, estado) VALUES (?, ?, ?, ?, ?, ?, ?)');
         $insertar->execute([$zonaId, $actorId, $inmuebleId, $fecha, $horaInicio, $horaFin, $estado]);
         $pdo->commit();
-        responseJSON('success', $interna ? 'Reserva creada y aprobada' : 'Solicitud enviada y pendiente de aprobación');
+        responseJSON('success', 'Reserva creada y aprobada automáticamente');
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         responseJSON('error', $e->getMessage());
@@ -244,12 +246,21 @@ if ($action === 'crear_reserva_interna') {
 }
 
 if ($action === 'cancelar_reserva') {
-    if (!in_array($rol, ['admin', 'vigilante'], true)) responseJSON('error', 'Sin permisos');
     $reservaId = (int) ($_POST['reserva_id'] ?? 0);
     if ($reservaId <= 0) responseJSON('error', 'Reserva inválida');
-    $stmt = $pdo->prepare("UPDATE reservas r JOIN zonas_sociales z ON z.id = r.zona_id SET r.estado = 'rechazada' WHERE r.id = ? AND z.conjunto_id = ? AND r.estado IN ('pendiente', 'aprobada')");
-    $stmt->execute([$reservaId, $conjuntoId]);
-    if (!$stmt->rowCount()) responseJSON('error', 'Reserva no encontrada o ya cancelada');
+
+    if (in_array($rol, ['admin', 'vigilante'], true)) {
+        $stmt = $pdo->prepare("UPDATE reservas r JOIN zonas_sociales z ON z.id = r.zona_id SET r.estado = 'rechazada' WHERE r.id = ? AND z.conjunto_id = ? AND r.estado IN ('pendiente', 'aprobada')");
+        $stmt->execute([$reservaId, $conjuntoId]);
+    } elseif (in_array($rol, ['residente', 'propietario'], true)) {
+        // El residente puede cancelar una reserva propia o del inmueble que tiene vinculado.
+        $stmt = $pdo->prepare("UPDATE reservas r JOIN zonas_sociales z ON z.id = r.zona_id SET r.estado = 'rechazada' WHERE r.id = ? AND z.conjunto_id = ? AND r.estado IN ('pendiente', 'aprobada') AND (r.usuario_id = ? OR EXISTS (SELECT 1 FROM relacion_inmuebles_usuarios ri WHERE ri.inmueble_id = r.inmueble_id AND ri.usuario_id = ?))");
+        $stmt->execute([$reservaId, $conjuntoId, $userId, $userId]);
+    } else {
+        responseJSON('error', 'Sin permisos');
+    }
+
+    if (!$stmt->rowCount()) responseJSON('error', 'Reserva no encontrada, sin permisos o ya cancelada');
     responseJSON('success', 'Reserva cancelada; se conserva en el historial');
 }
 

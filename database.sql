@@ -230,6 +230,18 @@ CREATE TABLE IF NOT EXISTS minuta_porteria (
     FOREIGN KEY (vigilante_id) REFERENCES usuarios (id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS minuta_adjuntos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    minuta_id INT NOT NULL,
+    nombre_original VARCHAR(255) NOT NULL,
+    archivo VARCHAR(255) NOT NULL,
+    mime VARCHAR(100) NOT NULL,
+    tamano INT UNSIGNED NOT NULL,
+    creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_minuta_adjuntos_minuta (minuta_id),
+    FOREIGN KEY (minuta_id) REFERENCES minuta_porteria (id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS paquetes (
     id INT AUTO_INCREMENT PRIMARY KEY,
     inmueble_id INT NOT NULL,
