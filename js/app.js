@@ -154,6 +154,7 @@ function loadView(viewName) {
         if (viewName === 'comunicaciones') loadComunicaciones();
         if (viewName === 'home-residente') loadHomeResidente();
         if (viewName === 'mis-pagos') loadMisPagos();
+        if (viewName === 'configuracion') loadConfiguracion();
     } else {
         container.innerHTML = `<div class="view card"><h2>En construcción</h2></div>`;
     }
@@ -195,6 +196,82 @@ async function loadHomeResidente() {
         document.getElementById('residente-mora').innerText = `$${data.data.mora_actual}`;
     } else {
         document.getElementById('residente-mora').innerText = `$0.00`;
+    }
+    
+    // Vehículos
+    const resV = await fetch('api/inmuebles.php?action=mis_vehiculos');
+    const dataV = await resV.json();
+    if(dataV.status === 'success') {
+        const tb = document.getElementById('tb-mis-vehiculos');
+        tb.innerHTML = dataV.data.length === 0 ? '<tr><td colspan="3">No tienes vehículos registrados</td></tr>' :
+            dataV.data.map(v => `<tr><td>${v.placa}</td><td>${v.tipo}</td><td>${v.marca || ''} - ${v.linea || ''}</td></tr>`).join('');
+    }
+    
+    const formV = document.getElementById('formNuevoVehiculo');
+    if (formV) {
+        formV.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(formV);
+            formData.append('action', 'add_vehiculo');
+            const res = await fetch('api/inmuebles.php', {method: 'POST', body: formData});
+            const d = await res.json();
+            alert(d.message);
+            if (d.status === 'success') {
+                formV.reset();
+                formV.classList.add('hidden');
+                loadHomeResidente();
+            }
+        };
+    }
+    
+    // Mascotas
+    const resM = await fetch('api/inmuebles.php?action=mis_mascotas');
+    const dataM = await resM.json();
+    if(dataM.status === 'success') {
+        const tb = document.getElementById('tb-mis-mascotas');
+        tb.innerHTML = dataM.data.length === 0 ? '<tr><td>No tienes mascotas registradas</td></tr>' :
+            dataM.data.map(m => `<tr><td>${m.descripcion}</td></tr>`).join('');
+    }
+    
+    const formM = document.getElementById('formNuevaMascota');
+    if (formM) {
+        formM.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(formM);
+            formData.append('action', 'add_mascota');
+            const res = await fetch('api/inmuebles.php', {method: 'POST', body: formData});
+            const d = await res.json();
+            alert(d.message);
+            if (d.status === 'success') {
+                formM.reset();
+                formM.classList.add('hidden');
+                loadHomeResidente();
+            }
+        };
+    }
+}
+
+async function loadConfiguracion() {
+    const res = await fetch('api/conjuntos.php?action=get_config');
+    const data = await res.json();
+    if(data.status === 'success' && data.data) {
+        document.getElementById('config-nombre').value = data.data.nombre || '';
+        document.getElementById('config-logo').value = data.data.logo_url || '';
+    }
+    
+    const form = document.getElementById('formConfiguracion');
+    if (form) {
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            formData.append('action', 'update_config');
+            const res = await fetch('api/conjuntos.php', {method: 'POST', body: formData});
+            const d = await res.json();
+            alert(d.message);
+            if (d.status === 'success') {
+                document.querySelector('.logo span').innerText = formData.get('nombre');
+            }
+        };
     }
 }
 
