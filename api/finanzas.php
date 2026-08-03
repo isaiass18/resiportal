@@ -95,7 +95,7 @@ if ($action === 'resumen_cartera') {
     responseJSON('success', '', array_merge($general->fetch() ?: [], $pagos->fetch() ?: [], $cuotas->fetch() ?: []));
 }
 if ($action === 'cartera') {
-    $stmt = $pdo->prepare("SELECT i.id, i.torre, i.apartamento, i.nomenclatura, i.mora_actual, u.nombre AS propietario_nombre FROM inmuebles i LEFT JOIN relacion_inmuebles_usuarios r ON r.inmueble_id = i.id AND r.tipo_relacion = 'propietario' LEFT JOIN usuarios u ON u.id = r.usuario_id WHERE i.conjunto_id = ? AND i.mora_actual > 0 ORDER BY i.mora_actual DESC");
+    $stmt = $pdo->prepare("SELECT i.id, i.torre, i.apartamento, i.nomenclatura, i.mora_actual, GROUP_CONCAT(DISTINCT u.nombre ORDER BY u.nombre SEPARATOR ', ') AS propietario_nombre FROM inmuebles i LEFT JOIN relacion_inmuebles_usuarios r ON r.inmueble_id = i.id AND r.tipo_relacion = 'propietario' LEFT JOIN usuarios u ON u.id = r.usuario_id WHERE i.conjunto_id = ? AND i.mora_actual > 0 GROUP BY i.id, i.torre, i.apartamento, i.nomenclatura, i.mora_actual ORDER BY i.mora_actual DESC");
     $stmt->execute([$conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
 }

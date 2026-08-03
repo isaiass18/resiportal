@@ -960,7 +960,7 @@ async function loadInmuebles() {
     const data = await res.json();
     const tbody = document.getElementById('tb-inmuebles');
     if (data.status === 'success') {
-        tbody.innerHTML = data.data.map(i => `<tr><td>${i.torre || 'N/A'}</td><td>${i.apartamento}</td><td><b>$${i.mora_actual}</b></td><td>${i.num_vehiculos}</td><td>${i.num_mascotas}</td></tr>`).join('');
+        tbody.innerHTML = data.data.map(i => `<tr><td>${i.torre || 'N/A'}</td><td>${i.apartamento}</td><td><b>${formatCurrency(i.mora_actual)}</b></td><td>${i.num_vehiculos}</td><td>${i.num_mascotas}</td></tr>`).join('');
     }
 }
 
@@ -2525,4 +2525,627 @@ initApp = function () {
         document.querySelectorAll('.nav-links li').forEach(enlace => enlace.classList.toggle('active', enlace.dataset.view === 'directorio'));
         loadView('directorio');
     }
+};
+
+
+// Interfaz unificada: notificaciones SweetAlert, horarios de servicio y agendas por franja.
+window.notificar = function (mensaje, icono = 'info') {
+    if (!window.Swal) return console[icono === 'error' ? 'error' : 'log'](mensaje);
+    return Swal.fire({ toast: true, position: 'top-end', icon: icono, title: String(mensaje || ''), showConfirmButton: false, timer: 4200, timerProgressBar: true });
+};
+window.alert = function (mensaje) {
+    const texto = String(mensaje || '');
+    const icono = /error|no se pudo|inválid|denegad|no autorizado|no encontrad|debe|selecciona/i.test(texto) ? 'error' : 'success';
+    return window.notificar(texto, icono);
+};
+window.confirmarAccion = async function ({ titulo = '¿Continuar?', texto = '', confirmar = 'Continuar', icono = 'warning' } = {}) {
+    if (!window.Swal) return false;
+    const resultado = await Swal.fire({ title: titulo, text: texto, icon: icono, showCancelButton: true, confirmButtonText: confirmar, cancelButtonText: 'Cancelar', reverseButtons: true, focusCancel: true });
+    return resultado.isConfirmed;
+};
+window.solicitarTexto = async function ({ titulo, etiqueta, valor = '' }) {
+    if (!window.Swal) return null;
+    const resultado = await Swal.fire({ title: titulo, input: 'text', inputLabel: etiqueta, inputValue: valor, inputPlaceholder: 'Opcional', showCancelButton: true, confirmButtonText: 'Continuar', cancelButtonText: 'Cancelar', reverseButtons: true });
+    return resultado.isConfirmed ? String(resultado.value || '') : null;
+};
+
+function horarioServicioZona(zona) {
+    const coincidencias = String(zona?.horarios || '').trim().match(/^([01]\d|2[0-3]):[0-5]\d\s*[-–]\s*([01]\d|2[0-3]):[0-5]\d$/);
+    if (!coincidencias || coincidencias[1] === coincidencias[2]) return null;
+    const aMinutos = Number(coincidencias[1].slice(0, 2)) * 60 + Number(coincidencias[1].slice(3));
+    const cMinutos = Number(coincidencias[2].slice(0, 2)) * 60 + Number(coincidencias[2].slice(3));
+    return { apertura: coincidencias[1], cierre: coincidencias[2], aperturaMinutos: aMinutos, cierreMinutos: cMinutos, nocturno: aMinutos > cMinutos };
+}
+
+function minutosHora(valor) {
+    const texto = valor instanceof Date ? `${String(valor.getHours()).padStart(2, '0')}:${String(valor.getMinutes()).padStart(2, '0')}` : String(valor || '').slice(0, 5);
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(texto) ? Number(texto.slice(0, 2)) * 60 + Number(texto.slice(3)) : null;
+}
+
+function momentoEnHorarioServicio(fecha, horario) {
+    if (!horario) return false;
+    const minutos = minutosHora(fecha);
+    if (minutos === null) return false;
+    return horario.nocturno ? minutos >= horario.aperturaMinutos || minutos < horario.cierreMinutos : minutos >= horario.aperturaMinutos && minutos < horario.cierreMinutos;
+}
+
+function franjaEnHorarioServicio(inicio, fin, horario) {
+    const inicioMinutos = minutosHora(inicio);
+    const finMinutos = minutosHora(fin);
+    if (inicioMinutos === null || finMinutos === null || inicioMinutos >= finMinutos || !horario) return false;
+    if (!horario.nocturno) return inicioMinutos >= horario.aperturaMinutos && finMinutos <= horario.cierreMinutos;
+    return (inicioMinutos >= horario.aperturaMinutos && finMinutos <= 1440) || (inicioMinutos >= 0 && finMinutos <= horario.cierreMinutos);
+}
+
+function eventosFondoHorario(horario) {
+    if (!horario) return [];
+    const dias = [0, 1, 2, 3, 4, 5, 6];
+    const base = { daysOfWeek: dias, display: 'background', classNames: ['zona-calendar-disponible'] };
+    if (!horario.nocturno) return [{ ...base, startTime: horario.apertura, endTime: horario.cierre }];
+    return [
+        { ...base, startTime: '00:00', endTime: horario.cierre },
+        { ...base, startTime: horario.apertura, endTime: '24:00' }
+    ];
+}
+
+function opcionesCalendarioHorario(zona) {
+    const horario = horarioServicioZona(zona);
+    return {
+        slotMinTime: '00:00:00',
+        slotMaxTime: '24:00:00',
+        slotDuration: '00:30:00',
+        businessHours: horario ? eventosFondoHorario(horario).map(({ classNames, display, ...regla }) => regla) : false,
+        slotLaneClassNames: info => horario && momentoEnHorarioServicio(info.date, horario) ? ['zona-slot-disponible'] : ['zona-slot-cerrado'],
+        dayCellClassNames: info => info.isPast ? ['zona-dia-pasado'] : ['zona-dia-disponible']
+    };
+}
+
+function leyendaHorarioCalendario() {
+    return '<div class="zona-availability-legends" aria-label="Estados de disponibilidad"><span class="zona-availability-legend is-available"><i></i> Disponible</span><span class="zona-availability-legend is-pending"><i></i> Solicitud pendiente</span><span class="zona-availability-legend is-reserved"><i></i> Reservado</span><span class="zona-availability-legend is-closed"><i></i> Fuera de servicio</span></div>';
+}
+
+function horaInicialDesdeClick(info, horario) {
+    if (info.allDay) return horario?.apertura || '08:00';
+    return `${String(info.date.getHours()).padStart(2, '0')}:${String(info.date.getMinutes()).padStart(2, '0')}`;
+}
+
+function configurarFormularioZona() {
+    const form = document.getElementById('formCrearZona');
+    if (!form || currentUser?.rol !== 'admin') return;
+    form.onsubmit = async event => {
+        event.preventDefault();
+        const apertura = document.getElementById('zonaHoraApertura').value;
+        const cierre = document.getElementById('zonaHoraCierre').value;
+        if (!apertura || !cierre || apertura === cierre) return window.notificar('Define una hora de apertura y otra de cierre diferentes.', 'error');
+        const data = new FormData();
+        const zonaId = document.getElementById('zonaId').value;
+        const horarios = `${apertura} - ${cierre}`;
+        document.getElementById('zonaHorarios').value = horarios;
+        data.append('action', zonaId ? 'actualizar_zona' : 'crear_zona');
+        [['zona_id', 'zonaId'], ['nombre', 'zonaNombre'], ['descripcion', 'zonaDescripcion'], ['aforo', 'zonaAforo'], ['tarifa', 'zonaTarifa'], ['max_horas_reserva', 'zonaMaxHorasReserva'], ['max_reservas_diarias_inmueble', 'zonaMaxReservasDiarias'], ['reglamento', 'zonaReglamento'], ['youtube_url', 'zonaYoutube']].forEach(([nombre, id]) => data.append(nombre, document.getElementById(id).value));
+        data.append('horarios', horarios);
+        const imagen = document.getElementById('zonaImagen').files[0];
+        if (imagen) data.append('imagen', imagen);
+        const response = await fetch('api/zonas.php', { method: 'POST', body: data });
+        const result = await response.json();
+        window.notificar(result.message, result.status === 'success' ? 'success' : 'error');
+        if (result.status === 'success') { cerrarFormularioZona(); await loadZonas(); loadPublicZonas(); }
+    };
+}
+
+window.abrirFormularioZona = function (zona = null) {
+    const form = document.getElementById('formCrearZona');
+    if (!form) return;
+    form.reset();
+    document.getElementById('zonaId').value = zona?.id || '';
+    document.getElementById('tituloFormularioZona').textContent = zona ? 'Editar zona social' : 'Configurar zona social';
+    document.getElementById('btnGuardarZona').innerHTML = zona ? '<i class="fa-solid fa-floppy-disk"></i> Guardar cambios' : '<i class="fa-solid fa-plus"></i> Crear zona';
+    const horario = horarioServicioZona(zona);
+    document.getElementById('zonaHoraApertura').value = horario?.apertura || '08:00';
+    document.getElementById('zonaHoraCierre').value = horario?.cierre || '17:00';
+    if (zona) {
+        document.getElementById('zonaNombre').value = zona.nombre || '';
+        document.getElementById('zonaDescripcion').value = zona.descripcion || '';
+        document.getElementById('zonaAforo').value = zona.aforo || '';
+        document.getElementById('zonaTarifa').value = zona.tarifa || 0;
+        document.getElementById('zonaMaxHorasReserva').value = zona.max_horas_reserva || 1;
+        document.getElementById('zonaMaxReservasDiarias').value = zona.max_reservas_diarias_inmueble || 1;
+        document.getElementById('zonaReglamento').value = zona.reglamento || '';
+        document.getElementById('zonaYoutube').value = zona.youtube_url || '';
+    }
+    document.getElementById('modalZona').classList.remove('hidden');
+    document.getElementById('zonaNombre').focus();
+};
+
+function renderDisponibilidadResidente() {
+    const selectZona = document.getElementById('reservaZonaId');
+    let calendario = document.getElementById('calendar-disponibilidad-residente');
+    if (!selectZona || !window.FullCalendar) return;
+    if (!calendario) {
+        calendario = document.createElement('section');
+        calendario.id = 'calendar-disponibilidad-residente';
+        calendario.className = 'resident-zone-calendar';
+        document.getElementById('calendar')?.closest('.card')?.insertAdjacentElement('beforebegin', calendario);
+    }
+    const zona = zonasReservaActuales.find(item => Number(item.id) === Number(selectZona.value));
+    if (!zona) { calendario.innerHTML = '<p class="muted">Selecciona una zona para consultar sus horarios disponibles.</p>'; return; }
+    const horario = horarioServicioZona(zona);
+    if (!horario) { calendario.innerHTML = '<p class="empty-state">Esta zona no tiene un horario de servicio válido. La administración debe configurarlo.</p>'; return; }
+    calendario.innerHTML = `<div class="resident-availability-header"><div><p class="section-kicker">Disponibilidad por horas</p><h3>Agenda: ${escapeHtml(zona.nombre)}</h3><p>Solo las franjas verdes están dentro del horario ${horario.apertura} – ${horario.cierre}.</p></div>${leyendaHorarioCalendario()}</div><div class="resident-zone-calendar-body"></div>`;
+    const cuerpo = calendario.querySelector('.resident-zone-calendar-body');
+    fetch(`api/zonas.php?action=zona_disponibilidad&zona_id=${encodeURIComponent(selectZona.value)}`).then(response => response.json()).then(result => {
+        if (result.status !== 'success') { cuerpo.innerHTML = `<p class="muted">${escapeHtml(result.message || 'No fue posible cargar la disponibilidad.')}</p>`; return; }
+        if (window.residentAvailabilityCalendar) window.residentAvailabilityCalendar.destroy();
+        window.residentAvailabilityCalendar = new FullCalendar.Calendar(cuerpo, {
+            initialView: 'timeGridWeek', locale: 'es', height: 'auto',
+            headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,dayGridMonth' },
+            ...opcionesCalendarioHorario(zona),
+            events: [...eventosFondoHorario(horario), ...(result.data.reservas || []).map(reserva => eventoReserva(reserva, false))],
+            dateClick: info => {
+                const fecha = fechaLocal(info.date);
+                const hora = horaInicialDesdeClick(info, horario);
+                if (fecha < fechaMinimaReserva()) return window.notificar('Selecciona una fecha futura para reservar.', 'warning');
+                if (!info.allDay && !momentoEnHorarioServicio(info.date, horario)) return window.notificar(`La zona está fuera de servicio. Horario: ${horario.apertura} – ${horario.cierre}.`, 'warning');
+                document.getElementById('reservaFecha').value = fecha;
+                document.getElementById('reservaHoraInicio').value = hora;
+                document.getElementById('reservaHoraFin').focus();
+            }
+        });
+        window.residentAvailabilityCalendar.render();
+    }).catch(() => { cuerpo.innerHTML = '<p class="muted">No fue posible cargar la disponibilidad.</p>'; });
+}
+
+function configurarReservaResidente() {
+    const form = document.getElementById('formReservarZona');
+    const selectZona = document.getElementById('reservaZonaId');
+    if (!form || !selectZona) return;
+    selectZona.onchange = renderDisponibilidadResidente;
+    form.onsubmit = async event => {
+        event.preventDefault();
+        const zona = zonasReservaActuales.find(item => Number(item.id) === Number(selectZona.value));
+        const horario = horarioServicioZona(zona);
+        const inicio = document.getElementById('reservaHoraInicio').value;
+        const fin = document.getElementById('reservaHoraFin').value;
+        if (!horario || !franjaEnHorarioServicio(inicio, fin, horario)) return window.notificar(`El horario debe estar dentro del servicio: ${horario?.apertura || '—'} – ${horario?.cierre || '—'}.`, 'error');
+        const data = new FormData();
+        data.append('action', 'crear_reserva');
+        [['zona_id', 'reservaZonaId'], ['inmueble_id', 'reservaInmuebleId'], ['fecha_reserva', 'reservaFecha'], ['hora_inicio', 'reservaHoraInicio'], ['hora_fin', 'reservaHoraFin']].forEach(([nombre, id]) => data.append(nombre, document.getElementById(id).value));
+        const response = await fetch('api/zonas.php', { method: 'POST', body: data });
+        const result = await response.json();
+        window.notificar(result.message, result.status === 'success' ? 'success' : 'error');
+        if (result.status === 'success') { form.reset(); await loadZonas(); }
+    };
+}
+
+function renderCalendarioInterno() {
+    const contenedor = document.getElementById('calendar');
+    if (!contenedor || !window.FullCalendar) return;
+    if (!zonasReservaActuales.length) { contenedor.innerHTML = '<p class="empty-state">No hay zonas configuradas para consultar disponibilidad.</p>'; return; }
+    const previo = Number(document.getElementById('calendarioZonaInterna')?.value || zonasReservaActuales[0].id);
+    contenedor.innerHTML = `<div class="internal-calendar-heading"><div><p class="section-kicker">Disponibilidad por inmueble</p><h3>Agenda operativa por horas</h3><p class="muted">Verde: disponible; amarillo: solicitud pendiente; rojo: reservado; gris: fuera de servicio.</p></div><label for="calendarioZonaInterna">Zona social<select id="calendarioZonaInterna">${zonasReservaActuales.map(zona => `<option value="${Number(zona.id)}" ${Number(zona.id) === previo ? 'selected' : ''}>${escapeHtml(zona.nombre)}</option>`).join('')}</select></label></div>${leyendaHorarioCalendario()}<div id="calendar-interno" class="internal-zone-calendar"></div>`;
+    const selector = document.getElementById('calendarioZonaInterna');
+    const render = () => {
+        const zona = zonasReservaActuales.find(item => Number(item.id) === Number(selector.value));
+        const horario = horarioServicioZona(zona);
+        const destino = document.getElementById('calendar-interno');
+        if (!horario) { destino.innerHTML = '<p class="empty-state">Configura el horario de servicio de esta zona antes de crear reservas.</p>'; return; }
+        const reservas = reservasZonasActuales.filter(reserva => Number(reserva.zona_id) === Number(zona.id) && ['pendiente', 'aprobada'].includes(reserva.estado));
+        if (window.zonasCalendar) window.zonasCalendar.destroy();
+        window.zonasCalendar = new FullCalendar.Calendar(destino, {
+            initialView: 'timeGridWeek', locale: 'es', height: 'auto',
+            headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,dayGridMonth' },
+            ...opcionesCalendarioHorario(zona),
+            events: [...eventosFondoHorario(horario), ...reservas.map(reserva => eventoReserva(reserva, true))],
+            dateClick: info => {
+                const fecha = fechaLocal(info.date);
+                const hora = horaInicialDesdeClick(info, horario);
+                if (fecha < fechaMinimaReserva(true)) return window.notificar('No puedes crear reservas en una fecha pasada.', 'warning');
+                if (!info.allDay && !momentoEnHorarioServicio(info.date, horario)) return window.notificar(`Fuera de servicio: ${horario.apertura} – ${horario.cierre}.`, 'warning');
+                window.abrirReservaInterna(0, fecha, Number(zona.id), hora);
+            },
+            eventClick: info => window.abrirReservaInterna(Number(info.event.id))
+        });
+        window.zonasCalendar.render();
+    };
+    selector.onchange = render;
+    render();
+}
+
+window.abrirDetalleZona = async function (zonaId) {
+    const modal = document.getElementById('zona-detalle-modal');
+    const titulo = document.getElementById('zona-detalle-titulo');
+    if (!modal || !titulo) return;
+    modal.classList.remove('hidden');
+    titulo.textContent = 'Cargando zona…';
+    try {
+        const response = await fetch(`api/zonas.php?action=public_zona_detalle&zona_id=${encodeURIComponent(zonaId)}`);
+        const result = await response.json();
+        if (result.status !== 'success') throw new Error(result.message);
+        const { zona, reservas } = result.data;
+        const horario = horarioServicioZona(zona);
+        document.getElementById('zona-detalle-imagen').style.backgroundImage = `linear-gradient(120deg, rgba(15,23,42,.2), rgba(15,23,42,.58)), url("${imagenZona(zona)}")`;
+        titulo.textContent = zona.nombre;
+        document.getElementById('zona-detalle-descripcion').textContent = zona.descripcion || 'Espacio disponible para el disfrute de la comunidad.';
+        document.getElementById('zona-detalle-aforo').textContent = `${zona.aforo || 'No definido'} personas`;
+        document.getElementById('zona-detalle-horario').textContent = zona.horarios || 'No definido';
+        document.getElementById('zona-detalle-tarifa').textContent = Number(zona.tarifa) ? formatCurrency(zona.tarifa) : 'Sin costo';
+        document.getElementById('zona-detalle-reglamento').textContent = zona.reglamento || 'No hay normas adicionales registradas.';
+        modal.querySelector('.zona-availability-legends').innerHTML = leyendaHorarioCalendario().replace(/^<div[^>]*>|<\/div>$/g, '');
+        const calendario = document.getElementById('public-zona-calendar');
+        if (window.publicZonaCalendar) window.publicZonaCalendar.destroy();
+        window.publicZonaCalendar = new FullCalendar.Calendar(calendario, {
+            initialView: 'timeGridWeek', locale: 'es', height: 'auto',
+            headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,dayGridMonth' },
+            ...opcionesCalendarioHorario(zona),
+            events: [...eventosFondoHorario(horario), ...(reservas || []).map(reserva => eventoReserva(reserva, false))]
+        });
+        window.publicZonaCalendar.render();
+    } catch (error) {
+        console.error(error);
+        titulo.textContent = 'No fue posible cargar esta zona';
+        window.notificar('No fue posible cargar la disponibilidad de la zona.', 'error');
+    }
+};
+
+window.eliminarEvento = async function (id) {
+    if (!await confirmarAccion({ titulo: '¿Eliminar evento?', texto: 'Esta acción no se puede deshacer.', confirmar: 'Eliminar evento' })) return;
+    const data = new FormData(); data.append('action', 'delete'); data.append('id', id);
+    const response = await fetch('api/eventos.php', { method: 'POST', body: data }); const result = await response.json();
+    window.notificar(result.message, result.status === 'success' ? 'success' : 'error');
+    if (result.status === 'success') { loadComunicaciones(); loadPublicEventos(); }
+};
+
+window.aprobarPago = async function (pagoId, estado) {
+    const esAprobacion = estado === 'aprobado';
+    if (!await confirmarAccion({ titulo: esAprobacion ? '¿Aprobar pago?' : '¿Rechazar pago?', texto: esAprobacion ? 'El valor aprobado disminuirá la mora del inmueble.' : 'El reporte permanecerá en el historial como rechazado.', confirmar: esAprobacion ? 'Aprobar pago' : 'Rechazar pago', icono: esAprobacion ? 'question' : 'warning' })) return;
+    const data = new FormData(); data.append('action', 'aprobar_pago'); data.append('pago_id', pagoId); data.append('estado', estado);
+    const response = await fetch('api/finanzas.php', { method: 'POST', body: data }); const result = await response.json();
+    window.notificar(result.message, result.status === 'success' ? 'success' : 'error');
+    if (result.status === 'success') loadFinanzas();
+};
+
+window.retirarParqueadero = async function (asignacionId) {
+    const motivo = await solicitarTexto({ titulo: 'Retirar parqueadero', etiqueta: 'Motivo del retiro' });
+    if (motivo === null) return;
+    if (!await confirmarAccion({ titulo: '¿Retirar parqueadero?', texto: 'La asignación se retirará, pero el historial se conservará.', confirmar: 'Retirar parqueadero' })) return;
+    const data = new FormData(); data.append('action', 'retirar'); data.append('asignacion_id', asignacionId); data.append('motivo_retiro', motivo);
+    const response = await fetch('api/parqueaderos.php', { method: 'POST', body: data }); const result = await response.json();
+    window.notificar(result.message, result.status === 'success' ? 'success' : 'error');
+    if (result.status === 'success') loadParqueaderos();
+};
+
+window.cambiarEstadoUsuario = async function (usuarioId, activar) {
+    let motivo = '';
+    if (!activar) {
+        motivo = await solicitarTexto({ titulo: 'Deshabilitar cuenta', etiqueta: 'Motivo de la deshabilitación' });
+        if (motivo === null) return;
+        if (!await confirmarAccion({ titulo: '¿Deshabilitar cuenta?', texto: 'La persona no podrá iniciar sesión; su historial se conservará.', confirmar: 'Deshabilitar cuenta' })) return;
+    }
+    const data = new FormData(); data.append('action', activar ? 'reactivar_usuario' : 'desactivar_usuario'); data.append('usuario_id', usuarioId); if (!activar) data.append('motivo_desactivacion', motivo);
+    const response = await fetch('api/users.php', { method: 'POST', body: data }); const result = await response.json();
+    window.notificar(result.message, result.status === 'success' ? 'success' : 'error');
+    if (result.status === 'success') document.getElementById('vigilantes-grid') ? loadVigilantes() : loadUsuarios();
+};
+
+window.gestionarReservaInterna = async function (reservaId, accion) {
+    if (accion === 'cancelar' && !await confirmarAccion({ titulo: '¿Cancelar reserva?', texto: 'La reserva se conservará en el historial.', confirmar: 'Cancelar reserva' })) return;
+    const data = new FormData(); data.append('reserva_id', reservaId);
+    if (accion === 'cancelar') data.append('action', 'cancelar_reserva');
+    else { data.append('action', 'estado_reserva'); data.append('estado', accion === 'aprobar' ? 'aprobada' : 'rechazada'); }
+    const response = await fetch('api/zonas.php', { method: 'POST', body: data }); const result = await response.json();
+    window.notificar(result.message, result.status === 'success' ? 'success' : 'error');
+    if (result.status === 'success') { document.getElementById('modalReservaInterna')?.classList.add('hidden'); await loadZonas(); }
+};
+
+window.cambiarEstadoReserva = async function (id, estado) {
+    const aprobada = estado === 'aprobada';
+    if (!await confirmarAccion({
+        titulo: aprobada ? '¿Aprobar reserva?' : '¿Rechazar reserva?',
+        texto: aprobada ? 'La franja quedará reservada para el inmueble solicitado.' : 'La solicitud quedará rechazada en el historial.',
+        confirmar: aprobada ? 'Aprobar reserva' : 'Rechazar reserva',
+        icono: aprobada ? 'question' : 'warning'
+    })) return;
+    const data = new FormData();
+    data.append('action', 'estado_reserva');
+    data.append('reserva_id', id);
+    data.append('estado', estado);
+    const response = await fetch('api/zonas.php', { method: 'POST', body: data });
+    const result = await response.json();
+    window.notificar(result.message, result.status === 'success' ? 'success' : 'error');
+    if (result.status === 'success') await loadZonas();
+};
+
+
+/* Operación administrativa: cartera, contenidos e importación guiada. */
+function digitosMoneda(valor) {
+    return String(valor ?? '').replace(/\D/g, '');
+}
+
+function formatearMiles(valor) {
+    const digitos = digitosMoneda(valor);
+    return digitos ? new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(Number(digitos)) : '';
+}
+
+function valorMonedaInput(id) {
+    return digitosMoneda(document.getElementById(id)?.value || '');
+}
+
+function prepararCampoMoneda(input) {
+    if (!input || input.dataset.moneyInput === 'true') return;
+    input.dataset.moneyInput = 'true';
+    input.classList.add('money-input');
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.autocomplete = 'off';
+    input.value = formatearMiles(input.value);
+}
+
+function prepararCamposMoneda(contexto = document) {
+    contexto.querySelectorAll('input[type="number"][id*="valor" i], input[type="number"][id*="tarifa" i], input[type="number"][id*="mora" i], input[type="number"][id*="cuota" i], input[type="text"][data-money-input="true"]').forEach(prepararCampoMoneda);
+}
+
+document.addEventListener('input', evento => {
+    const campo = evento.target;
+    if (campo?.dataset.moneyInput !== 'true') return;
+    campo.value = formatearMiles(campo.value);
+}, true);
+
+document.addEventListener('submit', evento => {
+    const campos = [...evento.target.querySelectorAll('[data-money-input="true"]')];
+    if (!campos.length) return;
+    campos.forEach(campo => { campo.value = digitosMoneda(campo.value); });
+    window.setTimeout(() => campos.forEach(campo => { campo.value = formatearMiles(campo.value); }), 0);
+}, true);
+
+function navegarModuloAdministrativo(vista) {
+    const enlace = document.querySelector(`.nav-links li[data-view="${vista}"]`);
+    enlace?.click();
+}
+
+function etiquetaInmueble(inmueble) {
+    return [inmueble.torre, inmueble.apartamento ? `Apto ${inmueble.apartamento}` : inmueble.nomenclatura].filter(Boolean).join(' · ') || inmueble.nomenclatura || 'Inmueble';
+}
+
+window.loadDashboard = async function () {
+    const novedadesEl = document.getElementById('admin-dashboard-novedades');
+    const eventosEl = document.getElementById('admin-dashboard-eventos');
+    try {
+        const respuestas = await Promise.all([
+            fetch('api/comunicaciones.php?action=list_comunicados'),
+            fetch('api/eventos.php?action=list'),
+            fetch('api/finanzas.php?action=dashboard_financiero')
+        ]);
+        const [novedades, eventos, finanzas] = await Promise.all(respuestas.map(respuesta => respuesta.json()));
+        const listaNovedades = novedades.status === 'success' ? novedades.data : [];
+        const listaEventos = eventos.status === 'success' ? eventos.data : [];
+        const resumen = finanzas.status === 'success' ? finanzas.data : {};
+        document.getElementById('admin-total-novedades').textContent = listaNovedades.length;
+        document.getElementById('admin-total-eventos').textContent = listaEventos.length;
+        document.getElementById('admin-total-cartera').textContent = formatCurrency(resumen.total_cartera);
+        novedadesEl.innerHTML = listaNovedades.length ? listaNovedades.slice(0, 4).map(item => `<article class="admin-feed-item"><h4>${escapeHtml(item.titulo)}</h4><p>${escapeHtml(item.contenido)}</p><small><i class="fa-regular fa-clock"></i> ${formatDate(item.fecha_publicacion)}</small></article>`).join('') : '<p class="admin-empty-state">Aún no hay novedades publicadas.</p>';
+        eventosEl.innerHTML = listaEventos.length ? listaEventos.slice(0, 4).map(item => `<article class="admin-feed-item"><h4>${escapeHtml(item.titulo)}</h4><p><i class="fa-regular fa-calendar"></i> ${formatDate(item.fecha_hora)} · ${escapeHtml(item.lugar || 'Lugar por definir')}</p><small>${escapeHtml(item.descripcion || '')}</small></article>`).join('') : '<p class="admin-empty-state">No hay eventos próximos.</p>';
+        [['comunicaciones', 'Gestionar novedades'], ['comunicaciones', 'Gestionar eventos'], ['finanzas', 'Ver cartera']].forEach(([vista, etiqueta], indice) => {
+            const tarjeta = document.querySelectorAll('.admin-summary-card')[indice];
+            if (!tarjeta) return;
+            tarjeta.classList.add('dashboard-link-card');
+            tarjeta.tabIndex = 0;
+            tarjeta.setAttribute('role', 'button');
+            tarjeta.setAttribute('aria-label', etiqueta);
+            tarjeta.onclick = () => navegarModuloAdministrativo(vista);
+            tarjeta.onkeydown = evento => { if (evento.key === 'Enter' || evento.key === ' ') { evento.preventDefault(); navegarModuloAdministrativo(vista); } };
+        });
+    } catch (error) {
+        console.error('Error cargando el panel administrativo', error);
+        if (novedadesEl) novedadesEl.innerHTML = '<p class="admin-empty-state">No fue posible cargar las novedades.</p>';
+        if (eventosEl) eventosEl.innerHTML = '<p class="admin-empty-state">No fue posible cargar los eventos.</p>';
+    }
+};
+
+window.abrirModalRegistrarPago = async function (inmueblePreferido = '') {
+    const modal = document.getElementById('modalRegistrarPago');
+    const select = document.getElementById('pagoInmuebleId');
+    if (!modal || !select) return;
+    modal.classList.remove('hidden');
+    select.innerHTML = '<option value="">Cargando inmuebles…</option>';
+    try {
+        const respuesta = await fetch('api/inmuebles.php?action=list');
+        const datos = await respuesta.json();
+        if (datos.status !== 'success') throw new Error(datos.message);
+        select.innerHTML = '<option value="">Selecciona un inmueble…</option>' + datos.data.map(inmueble => `<option value="${Number(inmueble.id)}" ${String(inmueble.id) === String(inmueblePreferido) ? 'selected' : ''}>${escapeHtml(etiquetaInmueble(inmueble))} · Debe ${formatCurrency(inmueble.mora_actual)}</option>`).join('');
+        if (inmueblePreferido) document.getElementById('pagoValor')?.focus();
+    } catch (error) {
+        select.innerHTML = '<option value="">No fue posible cargar inmuebles</option>';
+        window.notificar('No fue posible cargar los inmuebles para registrar el pago.', 'error');
+    }
+};
+
+window.loadFinanzas = async function () {
+    const [carteraR, pendientesR, historialR] = await Promise.all([
+        fetch('api/finanzas.php?action=cartera'),
+        fetch('api/finanzas.php?action=pagos_pendientes'),
+        fetch('api/finanzas.php?action=historial_pagos')
+    ]);
+    const [cartera, pendientes, historial] = await Promise.all([carteraR.json(), pendientesR.json(), historialR.json()]);
+    const tablaCartera = document.getElementById('tb-cartera');
+    if (cartera.status === 'success' && tablaCartera) {
+        const cabecera = tablaCartera.closest('table')?.querySelector('thead tr');
+        if (cabecera && cabecera.children.length === 3) cabecera.insertAdjacentHTML('beforeend', '<th>Acción</th>');
+        tablaCartera.innerHTML = cartera.data.length ? cartera.data.map(item => `<tr><td>${escapeHtml(etiquetaInmueble(item))}</td><td>${escapeHtml(item.propietario_nombre || 'Sin propietario asociado')}</td><td><b>${formatCurrency(item.mora_actual)}</b></td><td class="finance-action-cell"><button type="button" class="btn btn-primary" onclick="abrirModalRegistrarPago(${Number(item.id)})"><i class="fa-solid fa-cash-register"></i> Registrar pago</button></td></tr>`).join('') : '<tr><td colspan="4">No hay cartera pendiente</td></tr>';
+    }
+    const tablaPendientes = document.getElementById('tb-pagos-pendientes');
+    if (pendientes.status === 'success' && tablaPendientes) tablaPendientes.innerHTML = pendientes.data.length ? pendientes.data.map(item => `<tr><td>${escapeHtml(etiquetaInmueble(item))}</td><td>${escapeHtml(item.residente || 'Desconocido')}</td><td><b>${formatCurrency(item.valor)}</b></td><td>${escapeHtml(item.metodo_pago)}${item.referencia ? ` · ${escapeHtml(item.referencia)}` : ''}</td><td class="finance-action-cell"><button class="btn btn-primary" style="background:#16a34a" onclick="aprobarPago(${Number(item.id)}, 'aprobado')">Aprobar</button> <button class="btn btn-ghost" style="color:#dc2626" onclick="aprobarPago(${Number(item.id)}, 'rechazado')">Rechazar</button></td></tr>`).join('') : '<tr><td colspan="5">No hay pagos pendientes de aprobación</td></tr>';
+    const tablaHistorial = document.getElementById('tb-historial-pagos');
+    if (historial.status === 'success' && tablaHistorial) tablaHistorial.innerHTML = historial.data.length ? historial.data.map(item => `<tr><td>${escapeHtml(item.fecha_pago)}</td><td>${escapeHtml(etiquetaInmueble(item))}</td><td><b>${formatCurrency(item.valor)}</b></td><td>${escapeHtml(item.metodo_pago)}</td><td>${item.descripcion ? escapeHtml(item.descripcion) : '<span class="muted">Sin descripción</span>'}</td><td>${item.soporte_archivo ? `<a href="api/finanzas.php?action=ver_soporte&pago_id=${Number(item.id)}" target="_blank" rel="noopener">Ver soporte</a>` : '—'}</td><td>${escapeHtml(item.registrado_por_nombre || 'N/A')}</td></tr>`).join('') : '<tr><td colspan="7">No hay pagos registrados</td></tr>';
+
+    const campoCobro = document.getElementById('cobroValor');
+    if (campoCobro) {
+        campoCobro.id = 'cobroPeriodo';
+        campoCobro.type = 'month';
+        campoCobro.removeAttribute('data-money-input');
+        campoCobro.closest('form')?.previousElementSibling?.replaceChildren(document.createTextNode('Genera las cuotas con la tarifa configurada de cada inmueble para el período elegido.'));
+    }
+    const formCobro = document.getElementById('formGenerarCobro');
+    if (formCobro) formCobro.onsubmit = async evento => {
+        evento.preventDefault();
+        const datos = new FormData(); datos.append('action', 'generar_cobro'); datos.append('periodo', document.getElementById('cobroPeriodo').value);
+        const respuesta = await fetch('api/finanzas.php', { method: 'POST', body: datos }); const resultado = await respuesta.json();
+        window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+        if (resultado.status === 'success') { document.getElementById('modalCobro').classList.add('hidden'); await loadFinanzas(); }
+    };
+    const formPago = document.getElementById('formRegistrarPago');
+    if (formPago) formPago.onsubmit = async evento => {
+        evento.preventDefault();
+        const datos = new FormData();
+        [['action', 'registrar_pago'], ['inmueble_id', document.getElementById('pagoInmuebleId').value], ['valor', valorMonedaInput('pagoValor')], ['metodo', document.getElementById('pagoMetodo').value], ['referencia', document.getElementById('pagoReferencia').value], ['descripcion', document.getElementById('pagoDescripcion').value]].forEach(([nombre, valor]) => datos.append(nombre, valor));
+        const soporte = document.getElementById('pagoSoporte')?.files[0]; if (soporte) datos.append('soporte', soporte);
+        const respuesta = await fetch('api/finanzas.php', { method: 'POST', body: datos }); const resultado = await respuesta.json();
+        window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+        if (resultado.status === 'success') { document.getElementById('modalRegistrarPago').classList.add('hidden'); formPago.reset(); await loadFinanzas(); }
+    };
+    prepararCamposMoneda(document);
+};
+
+let eventosGestionActuales = [];
+let comunicadosGestionActuales = [];
+function prepararModalContenido(tipo, item = null) {
+    const esEvento = tipo === 'evento';
+    const formulario = document.getElementById(esEvento ? 'formEvento' : 'formComunicado');
+    const modal = document.getElementById(esEvento ? 'modalEvento' : 'modalComunicado');
+    if (!formulario || !modal) return;
+    let id = formulario.querySelector('input[type="hidden"]');
+    if (!id) { id = document.createElement('input'); id.type = 'hidden'; formulario.appendChild(id); }
+    id.id = esEvento ? 'evId' : 'comId'; id.value = item?.id || '';
+    modal.querySelector('h3').textContent = item ? (esEvento ? 'Editar evento' : 'Editar novedad') : (esEvento ? 'Crear nuevo evento' : 'Publicar novedad en el inicio');
+    formulario.querySelector('button[type="submit"]').textContent = item ? 'Guardar cambios' : (esEvento ? 'Publicar evento' : 'Publicar novedad');
+    if (esEvento) {
+        document.getElementById('evTitulo').value = item?.titulo || '';
+        document.getElementById('evFecha').value = item?.fecha_hora ? String(item.fecha_hora).replace(' ', 'T').slice(0, 16) : '';
+        document.getElementById('evLugar').value = item?.lugar || '';
+        document.getElementById('evDescripcion').value = item?.descripcion || '';
+    } else { document.getElementById('comTitulo').value = item?.titulo || ''; document.getElementById('comContenido').value = item?.contenido || ''; }
+    modal.classList.remove('hidden');
+}
+
+window.editarEvento = id => prepararModalContenido('evento', eventosGestionActuales.find(item => Number(item.id) === Number(id)));
+window.editarComunicado = id => prepararModalContenido('comunicado', comunicadosGestionActuales.find(item => Number(item.id) === Number(id)));
+window.eliminarComunicado = async function (id) {
+    if (!await confirmarAccion({ titulo: '¿Eliminar novedad?', texto: 'Se retirará del inicio y se conservará el registro de auditoría.', confirmar: 'Eliminar novedad' })) return;
+    const datos = new FormData(); datos.append('action', 'eliminar_comunicado'); datos.append('id', id);
+    const respuesta = await fetch('api/comunicaciones.php', { method: 'POST', body: datos }); const resultado = await respuesta.json();
+    window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+    if (resultado.status === 'success') { await loadComunicaciones(); loadPublicCartelera(); }
+};
+
+window.loadComunicaciones = async function () {
+    const [comunicadosR, eventosR, auditoriaR] = await Promise.all([fetch('api/comunicaciones.php?action=list_comunicados'), fetch('api/eventos.php?action=list'), fetch('api/comunicaciones.php?action=list_auditoria')]);
+    const [comunicados, eventos, auditoria] = await Promise.all([comunicadosR.json(), eventosR.json(), auditoriaR.json()]);
+    comunicadosGestionActuales = comunicados.status === 'success' ? comunicados.data : [];
+    eventosGestionActuales = eventos.status === 'success' ? eventos.data : [];
+    const lista = document.getElementById('list-comunicados');
+    if (lista) lista.innerHTML = comunicadosGestionActuales.length ? comunicadosGestionActuales.map(item => `<article class="notice-item"><h4>${escapeHtml(item.titulo)}</h4><p>${escapeHtml(item.contenido)}</p><small>Por ${escapeHtml(item.autor || 'Sistema')} · ${escapeHtml(item.fecha_publicacion)}</small><div class="content-actions"><button class="btn btn-ghost" onclick="editarComunicado(${Number(item.id)})"><i class="fa-solid fa-pen"></i> Editar</button><button class="btn btn-ghost" style="color:#dc2626" onclick="eliminarComunicado(${Number(item.id)})"><i class="fa-solid fa-trash"></i> Eliminar</button></div></article>`).join('') : '<p class="empty-state">No hay novedades publicadas.</p>';
+    const tablaEventos = document.getElementById('tb-eventos-admin');
+    if (tablaEventos) tablaEventos.innerHTML = eventosGestionActuales.length ? eventosGestionActuales.map(item => `<tr><td>${formatDate(item.fecha_hora)}</td><td>${escapeHtml(item.titulo)}</td><td>${escapeHtml(item.lugar || '—')}</td><td class="finance-action-cell"><button class="btn btn-ghost" onclick="editarEvento(${Number(item.id)})">Editar</button><button class="btn btn-ghost" style="color:#dc2626" onclick="eliminarEvento(${Number(item.id)})">Eliminar</button></td></tr>`).join('') : '<tr><td colspan="4">No hay eventos</td></tr>';
+    const tablaAuditoria = document.getElementById('tb-auditoria');
+    if (auditoria.status === 'success' && tablaAuditoria) tablaAuditoria.innerHTML = auditoria.data.length ? auditoria.data.map(item => `<tr><td>${escapeHtml(item.fecha)}</td><td>${escapeHtml(item.usuario || 'Sistema')}</td><td>${escapeHtml(item.accion)} en ${escapeHtml(item.entidad)}</td><td>${escapeHtml(item.detalles || '')}</td></tr>`).join('') : '<tr><td colspan="4">No hay registros de auditoría.</td></tr>';
+    const formEvento = document.getElementById('formEvento');
+    if (formEvento) formEvento.onsubmit = async evento => {
+        evento.preventDefault(); const datos = new FormData(); const id = document.getElementById('evId')?.value;
+        datos.append('action', id ? 'update' : 'create'); if (id) datos.append('id', id);
+        [['titulo', 'evTitulo'], ['fecha_hora', 'evFecha'], ['lugar', 'evLugar'], ['descripcion', 'evDescripcion']].forEach(([nombre, campo]) => datos.append(nombre, document.getElementById(campo).value));
+        const respuesta = await fetch('api/eventos.php', { method: 'POST', body: datos }); const resultado = await respuesta.json(); window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+        if (resultado.status === 'success') { document.getElementById('modalEvento').classList.add('hidden'); formEvento.reset(); await loadComunicaciones(); loadPublicEventos(); }
+    };
+    const formComunicado = document.getElementById('formComunicado');
+    if (formComunicado) formComunicado.onsubmit = async evento => {
+        evento.preventDefault(); const datos = new FormData(); const id = document.getElementById('comId')?.value;
+        datos.append('action', id ? 'actualizar_comunicado' : 'crear_comunicado'); if (id) datos.append('id', id);
+        datos.append('titulo', document.getElementById('comTitulo').value); datos.append('contenido', document.getElementById('comContenido').value);
+        const respuesta = await fetch('api/comunicaciones.php', { method: 'POST', body: datos }); const resultado = await respuesta.json(); window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+        if (resultado.status === 'success') { document.getElementById('modalComunicado').classList.add('hidden'); formComunicado.reset(); await loadComunicaciones(); loadPublicCartelera(); }
+    };
+    [...document.querySelectorAll('button')].forEach(boton => {
+        if (boton.textContent.includes('Nuevo Evento')) boton.onclick = () => prepararModalContenido('evento');
+        if (boton.textContent.includes('Publicar novedad')) boton.onclick = () => prepararModalContenido('comunicado');
+    });
+};
+
+window.initImportView = function () {
+    const input = document.getElementById('excelFile'); const zona = document.getElementById('uploadZone'); const seccion = document.getElementById('mappingSection'); const formulario = document.getElementById('mappingForm');
+    if (!input || !zona || !seccion || !formulario) return;
+    input.accept = '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const tipos = {
+        residentes: { titulo: 'Residentes', descripcion: 'Documento, nombre y vínculo opcional con inmueble', campos: [['documento', 'Documento *'], ['nombre', 'Nombre completo *'], ['email', 'Correo'], ['contacto', 'Teléfono'], ['inmueble_nomenclatura', 'Nomenclatura del inmueble']] },
+        propietarios: { titulo: 'Propietarios', descripcion: 'Documento, nombre y vínculo opcional con inmueble', campos: [['documento', 'Documento *'], ['nombre', 'Nombre completo *'], ['email', 'Correo'], ['contacto', 'Teléfono'], ['inmueble_nomenclatura', 'Nomenclatura del inmueble']] },
+        inmuebles: { titulo: 'Apartamentos o casas', descripcion: 'Nomenclatura única, torre, cuota y mora opcionales', campos: [['nomenclatura', 'Nomenclatura *'], ['tipo_unidad', 'Tipo: apartamento/casa'], ['torre', 'Torre o bloque'], ['apartamento', 'Apartamento'], ['coeficiente', 'Coeficiente'], ['cuota_administracion', 'Cuota de administración'], ['mora_actual', 'Mora actual']] },
+        parqueaderos: { titulo: 'Parqueaderos', descripcion: 'Código único y asignación opcional a inmueble', campos: [['codigo', 'Código *'], ['tipo', 'Tipo: privado/administracion/visitante/otro'], ['estado', 'Estado: disponible/asignado/inactivo'], ['observaciones', 'Observaciones'], ['inmueble_nomenclatura', 'Nomenclatura asignada']] }
+    };
+    zona.insertAdjacentHTML('beforebegin', `<p class="import-help">1. Selecciona qué deseas importar. 2. Carga un XLSX. 3. Relaciona cada columna. 4. Revisa la vista previa antes de confirmar.</p><div class="import-type-picker">${Object.entries(tipos).map(([clave, tipo], indice) => `<label><input type="radio" name="importTipo" value="${clave}" ${indice === 0 ? 'checked' : ''}><strong>${tipo.titulo}</strong><small>${tipo.descripcion}</small></label>`).join('')}</div><div id="importPreview"></div>`);
+    let headers = []; let listoParaImportar = false;
+    const tipoSeleccionado = () => document.querySelector('input[name="importTipo"]:checked')?.value || 'residentes';
+    const opciones = campo => `<option value="">— No mapear —</option>${headers.map((header, indice) => `<option value="${indice}" ${String(header).toLowerCase().includes(campo.split('_')[0]) ? 'selected' : ''}>${escapeHtml(header || `Columna ${indice + 1}`)}</option>`).join('')}`;
+    const mapeo = () => Object.fromEntries(tipos[tipoSeleccionado()].campos.map(([campo]) => [campo, formulario.querySelector(`[name="map_${campo}"]`)?.value || '']));
+    const enviar = async accion => {
+        const archivo = input.files[0]; if (!archivo) return window.notificar('Selecciona el archivo XLSX primero.', 'warning');
+        const datos = new FormData(); datos.append('action', accion); datos.append('tipo', tipoSeleccionado()); datos.append('mapping', JSON.stringify(mapeo())); datos.append('file', archivo);
+        const respuesta = await fetch('api/import.php', { method: 'POST', body: datos }); return respuesta.json();
+    };
+    input.onchange = async () => {
+        const archivo = input.files[0]; if (!archivo) return;
+        const datos = new FormData(); datos.append('action', 'get_headers'); datos.append('tipo', tipoSeleccionado()); datos.append('file', archivo);
+        const respuesta = await fetch('api/import.php', { method: 'POST', body: datos }); const resultado = await respuesta.json();
+        if (resultado.status !== 'success') return window.notificar(resultado.message, 'error');
+        headers = resultado.data.headers; listoParaImportar = false;
+        formulario.innerHTML = tipos[tipoSeleccionado()].campos.map(([campo, etiqueta]) => `<div class="mapping-item"><label>${etiqueta}</label><select name="map_${campo}">${opciones(campo)}</select></div>`).join('');
+        seccion.classList.remove('hidden');
+        seccion.querySelector('h3').textContent = `Asignar columnas: ${tipos[tipoSeleccionado()].titulo}`;
+        seccion.querySelector('p').textContent = `${resultado.data.rows} fila(s) detectadas. Los campos con * son obligatorios.`;
+        seccion.insertAdjacentHTML('beforeend', '<div class="actions mt-4"><button type="button" class="btn btn-ghost" id="btnPrevisualizarImportacion">Validar y ver vista previa</button></div>');
+        document.getElementById('btnProcesarImportacion').disabled = true;
+        document.getElementById('btnPrevisualizarImportacion').onclick = async () => {
+            const previo = await enviar('preview'); const panel = document.getElementById('importPreview');
+            if (previo.status !== 'success') return window.notificar(previo.message, 'error');
+            const info = previo.data; listoParaImportar = info.summary.errores === 0 && info.summary.validas > 0;
+            panel.innerHTML = `<p class="${listoParaImportar ? 'import-ok' : 'import-errors'}">${listoParaImportar ? `Listo: ${info.summary.validas} fila(s) válidas.` : `${info.summary.errores} error(es). Corrígelos antes de importar.`}</p>${info.sample.length ? `<div class="import-preview-wrap"><table class="import-preview-table"><thead><tr>${Object.keys(info.sample[0]).filter(campo => campo !== '_fila').map(campo => `<th>${escapeHtml(campo)}</th>`).join('')}</tr></thead><tbody>${info.sample.map(fila => `<tr>${Object.keys(fila).filter(campo => campo !== '_fila').map(campo => `<td>${escapeHtml(fila[campo] || '—')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}${info.errors.length ? `<div class="import-errors">${info.errors.map(error => `Fila ${error.fila}: ${escapeHtml(error.mensaje)}`).join('<br>')}</div>` : ''}`;
+            document.getElementById('btnProcesarImportacion').disabled = !listoParaImportar;
+        };
+    };
+    document.querySelectorAll('input[name="importTipo"]').forEach(radio => radio.onchange = () => { input.value = ''; headers = []; listoParaImportar = false; seccion.classList.add('hidden'); document.getElementById('importPreview').innerHTML = ''; });
+    document.getElementById('btnProcesarImportacion').onclick = async () => {
+        if (!listoParaImportar) return window.notificar('Valida la vista previa sin errores antes de importar.', 'warning');
+        if (!await confirmarAccion({ titulo: '¿Importar datos?', texto: 'Se crearán o actualizarán solo las filas validadas del archivo.', confirmar: 'Importar datos', icono: 'question' })) return;
+        const boton = document.getElementById('btnProcesarImportacion'); boton.disabled = true; const original = boton.textContent; boton.textContent = 'Importando…';
+        try { const resultado = await enviar('process'); window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error'); if (resultado.status === 'success') { input.value = ''; seccion.classList.add('hidden'); document.getElementById('importPreview').innerHTML = ''; } } finally { boton.textContent = original; boton.disabled = false; }
+    };
+};
+
+
+window.loadMisPagos = async function () {
+    const respuesta = await fetch('api/finanzas.php?action=mis_pagos');
+    const resultado = await respuesta.json();
+    if (resultado.status !== 'success') return window.notificar(resultado.message, 'error');
+    const cuenta = resultado.data.cuenta;
+    if (cuenta) {
+        document.getElementById('txtDeudaResidente').textContent = formatCurrency(cuenta.mora_actual);
+        document.getElementById('txtInmuebleResidente').innerHTML = `<i class="fa-solid fa-building"></i> ${escapeHtml(etiquetaInmueble(cuenta))}`;
+    }
+    const tabla = document.getElementById('tb-mis-pagos');
+    if (tabla) tabla.innerHTML = resultado.data.historial.length ? resultado.data.historial.map(pago => `<tr><td>${escapeHtml(pago.fecha_pago)}</td><td>${formatCurrency(pago.valor)}</td><td>${escapeHtml(pago.metodo_pago)}</td><td>${escapeHtml(pago.referencia || '—')}</td><td><span class="reserva-estado estado-${escapeHtml(pago.estado)}">${escapeHtml(pago.estado)}</span></td></tr>`).join('') : '<tr><td colspan="6">No has reportado ningún pago.</td></tr>';
+    const formulario = document.getElementById('formReportarPago');
+    if (formulario) formulario.onsubmit = async evento => {
+        evento.preventDefault();
+        const datos = new FormData();
+        [['action', 'reportar_pago'], ['valor', valorMonedaInput('repPagoValor')], ['referencia', document.getElementById('repPagoRef').value], ['metodo', document.getElementById('repPagoMetodo').value], ['descripcion', document.getElementById('repPagoDescripcion').value]].forEach(([nombre, valor]) => datos.append(nombre, valor));
+        const soporte = document.getElementById('repPagoSoporte')?.files[0]; if (soporte) datos.append('soporte', soporte);
+        const respuestaPago = await fetch('api/finanzas.php', { method: 'POST', body: datos }); const pago = await respuestaPago.json();
+        window.notificar(pago.message, pago.status === 'success' ? 'success' : 'error');
+        if (pago.status === 'success') { formulario.reset(); await loadMisPagos(); }
+    };
+    prepararCamposMoneda(document);
+};
+
+
+const cargarVistaConFormatoMoneda = window.loadView;
+window.loadView = function (vista) {
+    cargarVistaConFormatoMoneda(vista);
+    window.setTimeout(() => prepararCamposMoneda(document), 0);
 };

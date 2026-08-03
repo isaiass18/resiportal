@@ -48,6 +48,25 @@ function horaValida(string $hora): bool
     return (bool) preg_match('/^([01]\\d|2[0-3]):[0-5]\\d$/', $hora);
 }
 
+function horarioServicio(string $horarios): ?array
+{
+    if (!preg_match('/^([01]\\d|2[0-3]):[0-5]\\d\\s*[-–]\\s*([01]\\d|2[0-3]):[0-5]\\d$/', trim($horarios), $coincidencias)) return null;
+    $apertura = $coincidencias[1];
+    $cierre = $coincidencias[2];
+    if ($apertura === $cierre) return null;
+    return ['apertura' => $apertura, 'cierre' => $cierre];
+}
+
+function franjaDentroHorarioServicio(string $inicio, string $fin, array $horario): bool
+{
+    $aMinutos = ((int) substr($horario['apertura'], 0, 2) * 60) + (int) substr($horario['apertura'], 3, 2);
+    $cMinutos = ((int) substr($horario['cierre'], 0, 2) * 60) + (int) substr($horario['cierre'], 3, 2);
+    $iMinutos = ((int) substr($inicio, 0, 2) * 60) + (int) substr($inicio, 3, 2);
+    $fMinutos = ((int) substr($fin, 0, 2) * 60) + (int) substr($fin, 3, 2);
+    if ($aMinutos < $cMinutos) return $iMinutos >= $aMinutos && $fMinutos <= $cMinutos;
+    return ($iMinutos >= $aMinutos && $fMinutos <= 1440) || ($iMinutos >= 0 && $fMinutos <= $cMinutos);
+}
+
 function idsZonaLogica(PDO $pdo, int $conjuntoId, string $nombre, bool $bloquear = false): array
 {
     $stmt = $pdo->prepare('SELECT id FROM zonas_sociales WHERE conjunto_id = ? AND LOWER(TRIM(nombre)) = LOWER(TRIM(?))' . ($bloquear ? ' FOR UPDATE' : ''));
@@ -95,7 +114,7 @@ function crearReservaHoraria(PDO $pdo, int $conjuntoId, int $actorId, string $ro
 
     try {
         $pdo->beginTransaction();
-        $zonaStmt = $pdo->prepare('SELECT id, nombre, max_horas_reserva, max_reservas_diarias_inmueble FROM zonas_sociales WHERE id = ? AND conjunto_id = ? FOR UPDATE');
+        $zonaStmt = $pdo->prepare('SELECT id, nombre, horarios, max_horas_reserva, max_reservas_diarias_inmueble FROM zonas_sociales WHERE id = ? AND conjunto_id = ? FOR UPDATE');
         $zonaStmt->execute([$zonaId, $conjuntoId]);
         $zona = $zonaStmt->fetch();
         if (!$zona) throw new Exception('Zona no disponible');
@@ -114,6 +133,11 @@ function crearReservaHoraria(PDO $pdo, int $conjuntoId, int $actorId, string $ro
         $duracionHoras = (strtotime("1970-01-01 $horaFin") - strtotime("1970-01-01 $horaInicio")) / 3600;
         if ($duracionHoras > (int) $zona['max_horas_reserva']) {
             throw new Exception("La zona permite máximo {$zona['max_horas_reserva']} hora(s) por reserva");
+        }
+        $horario = horarioServicio((string) $zona['horarios']);
+        if (!$horario) throw new Exception('La administración debe configurar un horario de servicio válido para esta zona');
+        if (!franjaDentroHorarioServicio($horaInicio, $horaFin, $horario)) {
+            throw new Exception("La reserva debe estar dentro del horario de servicio {$horario['apertura']} - {$horario['cierre']}");
         }
 
         $idsZona = idsZonaLogica($pdo, $conjuntoId, $zona['nombre'], true);
@@ -171,7 +195,7 @@ if ($action === 'zonas_list') {
 
 if ($action === 'zona_disponibilidad') {
     $zonaId = (int) ($_GET['zona_id'] ?? 0);
-    $stmt = $pdo->prepare('SELECT id, nombre, max_horas_reserva, max_reservas_diarias_inmueble FROM zonas_sociales WHERE id = ? AND conjunto_id = ?');
+    $stmt = $pdo->prepare('SELECT id, nombre, horarios, max_horas_reserva, max_reservas_diarias_inmueble FROM zonas_sociales WHERE id = ? AND conjunto_id = ?');
     $stmt->execute([$zonaId, $conjuntoId]);
     $zona = $stmt->fetch();
     if (!$zona) responseJSON('error', 'Zona no encontrada');
@@ -237,11 +261,12 @@ if ($action === 'crear_zona' || $action === 'actualizar_zona') {
     $tarifa = (float) ($_POST['tarifa'] ?? 0);
     $aforo = (int) ($_POST['aforo'] ?? 0);
     $horarios = trim($_POST['horarios'] ?? '');
+    $horarioServicio = horarioServicio($horarios);
     $maxHoras = (int) ($_POST['max_horas_reserva'] ?? 0);
     $maxReservas = (int) ($_POST['max_reservas_diarias_inmueble'] ?? 0);
     $reglamento = trim($_POST['reglamento'] ?? '');
     $youtube = trim($_POST['youtube_url'] ?? '');
-    if ($nombre === '' || $descripcion === '' || $horarios === '' || $reglamento === '' || $aforo < 1 || $tarifa < 0 || $maxHoras < 1 || $maxHoras > 24 || $maxReservas < 1 || $maxReservas > 20) responseJSON('error', 'Completa la información y define límites de reserva válidos');
+    if ($nombre === '' || $descripcion === '' || !$horarioServicio || $reglamento === '' || $aforo < 1 || $tarifa < 0 || $maxHoras < 1 || $maxHoras > 24 || $maxReservas < 1 || $maxReservas > 20) responseJSON('error', 'Completa la información y define horarios y límites de reserva válidos');
     if ($youtube !== '' && !videoYoutubeId($youtube)) responseJSON('error', 'La URL de YouTube no es válida');
     $imagen = null;
     if (isset($_FILES['imagen']) && $_FILES['imagen']['error'] !== UPLOAD_ERR_NO_FILE) $imagen = cargarImagenZona($_FILES['imagen']);

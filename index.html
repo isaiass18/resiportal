@@ -9,10 +9,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.15.10/dist/sweetalert2.all.min.js"></script>
     <!-- Swiper JS for sliders -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=20260816">
+    <link rel="stylesheet" href="css/style.css?v=20260819">
 </head>
 
 <body>
@@ -31,29 +32,23 @@
         </nav>
 
         <!-- Selección de Portales (Modal de Cristal) -->
-        <div id="portal-selection" class="login-modal hidden"
-            style="z-index: 10000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(10px);">
-            <div class="login-box"
-                style="max-width: 800px; width: 90%; background: rgba(255,255,255,0.85); backdrop-filter: blur(20px);">
-                <button class="close-btn"
-                    onclick="document.getElementById('portal-selection').classList.add('hidden')"><i
-                        class="fa-solid fa-xmark"></i></button>
-                <h2 style="text-align: center; font-size: 32px; font-weight: 800; margin-bottom: 32px;">Selecciona tu
-                    <span>Portal</span>
-                </h2>
+        <div id="portal-selection" class="login-modal portal-selection-modal hidden" role="dialog" aria-modal="true"
+            aria-labelledby="portal-selection-title">
+            <div class="login-box portal-selection-box">
+                <button class="close-btn" type="button"
+                    onclick="document.getElementById('portal-selection').classList.add('hidden')"
+                    aria-label="Cerrar selección de portal"><i class="fa-solid fa-xmark"></i></button>
+                <h2 id="portal-selection-title">Selecciona tu <span>Portal</span></h2>
                 <div class="portal-cards">
-                    <div class="portal-card" onclick="openLoginModal('residente')">
-                        <i class="fa-solid fa-house-user"></i>
-                        <h3>Residentes</h3>
-                    </div>
-                    <div class="portal-card" onclick="openLoginModal('vigilante')">
-                        <i class="fa-solid fa-shield-halved"></i>
-                        <h3>Seguridad</h3>
-                    </div>
-                    <div class="portal-card" onclick="openLoginModal('admin')">
-                        <i class="fa-solid fa-briefcase"></i>
-                        <h3>Administración</h3>
-                    </div>
+                    <button type="button" class="portal-card" onclick="openLoginModal('residente')">
+                        <i class="fa-solid fa-house-user"></i><span>Residentes</span>
+                    </button>
+                    <button type="button" class="portal-card" onclick="openLoginModal('vigilante')">
+                        <i class="fa-solid fa-shield-halved"></i><span>Seguridad</span>
+                    </button>
+                    <button type="button" class="portal-card" onclick="openLoginModal('admin')">
+                        <i class="fa-solid fa-briefcase"></i><span>Administración</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -1088,10 +1083,15 @@
                                 <input type="number" id="zonaTarifa" min="0" step="1000" placeholder="0 si no aplica"
                                     required>
                             </label>
-                            <label class="zone-editor-field zone-editor-field-full">Horario permitido <span>*</span>
-                                <input type="text" id="zonaHorarios" placeholder="Ej. 8:00 a. m. – 10:00 p. m."
-                                    required>
-                            </label>
+                            <div class="zone-editor-schedule-grid">
+                                <label class="zone-editor-field">Hora de apertura <span>*</span>
+                                    <input type="time" id="zonaHoraApertura" required>
+                                </label>
+                                <label class="zone-editor-field">Hora de cierre <span>*</span>
+                                    <input type="time" id="zonaHoraCierre" required>
+                                </label>
+                            </div>
+                            <input type="hidden" id="zonaHorarios">
                         </div>
                     </fieldset>
                     <fieldset class="zone-editor-section zone-editor-policy">
@@ -1306,7 +1306,7 @@
     </template>
 
     <!-- Script Principal -->
-    <script src="js/app.js?v=20260815"></script>
+    <script src="js/app.js?v=20260819"></script>
 </body>
 
 </html>

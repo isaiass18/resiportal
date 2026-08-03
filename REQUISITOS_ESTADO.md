@@ -42,6 +42,16 @@
 - Administración y vigilancia ven la agenda interna por horas con inmueble y horario, pueden crear reservas internas aprobadas y cancelarlas lógicamente; administración también puede aprobar o rechazar solicitudes pendientes.
 - El editor administrativo fue rediseñado en secciones de información básica, política de reservas y contenido visible; conserva carga validada de imagen JPG/PNG/WEBP hasta 5 MB y enlace de YouTube validado.
 
+## [x] Experiencia operativa reciente
+
+- Calendarios de zonas en el inicio público, residente/propietario y operación interna: verde únicamente dentro del horario de servicio, ámbar para solicitudes pendientes, rojo para reservas aprobadas y gris fuera de servicio; el servidor también rechaza franjas fuera del horario.
+- Notificaciones, confirmaciones e ingreso de texto de las acciones activas se presentan mediante SweetAlert2 en lugar de diálogos nativos del navegador.
+- Selector de portal accesible, con tres accesos compactos en una fila en móvil y desplazamiento vertical dentro del modal.
+- Valores financieros presentados con separador de miles COP; los campos monetarios conservan el valor numérico que recibe el servidor al guardar.
+- Cartera agrupada por inmueble, con propietarios consolidados y acceso directo para registrar el pago del apartamento/casa seleccionado; las tarjetas administrativas enlazan a sus módulos.
+- Administración de contenido: eventos editables/eliminables y novedades editables/eliminables, con control de conjunto, permisos y auditoría.
+- Importación XLSX guiada para residentes, propietarios, inmuebles y parqueaderos: selección de entidad, mapeo explícito de columnas, previsualización, validación por fila y escritura transaccional solo después de confirmar una vista previa sin errores.
+
 ## [x] Finanzas operativas y cuotas
 
 - Consulta de cartera, métricas de recaudo, inmuebles en mora, pagos pendientes/aprobados y cuotas generadas en el período actual.
