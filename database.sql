@@ -152,6 +152,35 @@ CREATE TABLE IF NOT EXISTS pagos (
     FOREIGN KEY (registrado_por) REFERENCES usuarios(id) ON DELETE SET NULL
 );
 
+-- Sprint 3: Comunicaciones, Documentos y Auditoría
+CREATE TABLE IF NOT EXISTS comunicados (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(150) NOT NULL,
+    contenido TEXT NOT NULL,
+    fecha_publicacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    autor_id INT,
+    FOREIGN KEY (autor_id) REFERENCES usuarios(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS documentos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(150) NOT NULL,
+    ruta_archivo VARCHAR(255) NOT NULL,
+    fecha_subida TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    subido_por INT,
+    FOREIGN KEY (subido_por) REFERENCES usuarios(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS auditoria_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT,
+    accion VARCHAR(100) NOT NULL,
+    entidad VARCHAR(100) NOT NULL,
+    detalles TEXT,
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL
+);
+
 -- Datos por defecto para pruebas
 INSERT IGNORE INTO conjuntos (id, nombre) VALUES (1, 'Conjunto Residencial Demo');
 INSERT IGNORE INTO usuarios (conjunto_id, rol, documento, nombre, email, password_hash) VALUES (1, 'admin', '123456', 'Administrador', 'admin@demo.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi'); -- password: password

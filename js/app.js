@@ -79,12 +79,72 @@ function loadView(viewName) {
         if (viewName === 'reclamaciones') loadReclamaciones();
         if (viewName === 'porteria') loadPorteria();
         if (viewName === 'finanzas') loadFinanzas();
+        if (viewName === 'comunicaciones') loadComunicaciones();
     } else {
         container.innerHTML = `<div class="view card"><h2>En construcción</h2></div>`;
     }
 }
 
+// Global Export Function
+function exportCSV() {
+    // Basic export for testing/MVP purposes
+    alert('Exportando datos básicos a CSV...');
+    let csv = "ID,Nombre,Apartamento\n1,Juan Perez,101\n2,Maria Lopez,102";
+    let blob = new Blob([csv], { type: 'text/csv' });
+    let url = window.URL.createObjectURL(blob);
+    let a = document.createElement('a');
+    a.href = url;
+    a.download = 'reporte_conjunto.csv';
+    a.click();
+}
+
 // Data Loaders
+async function loadComunicaciones() {
+    // Comunicados
+    const resC = await fetch('api/comunicaciones.php?action=list_comunicados');
+    const dataC = await resC.json();
+    if(dataC.status === 'success') {
+        const div = document.getElementById('list-comunicados');
+        div.innerHTML = dataC.data.length === 0 ? '<p>No hay comunicados</p>' :
+            dataC.data.map(c => `
+                <div style="border-left: 4px solid var(--primary); padding-left: 12px; margin-bottom: 12px;">
+                    <h4 style="margin:0">${c.titulo}</h4>
+                    <p style="margin:4px 0; font-size:14px; color:#555;">${c.contenido}</p>
+                    <small style="color:#888;">Por ${c.autor} el ${c.fecha_publicacion}</small>
+                </div>
+            `).join('');
+    }
+
+    // Auditoria
+    const resA = await fetch('api/comunicaciones.php?action=list_auditoria');
+    const dataA = await resA.json();
+    if(dataA.status === 'success') {
+        const tb = document.getElementById('tb-auditoria');
+        tb.innerHTML = dataA.data.length === 0 ? '<tr><td colspan="4">No hay logs</td></tr>' :
+            dataA.data.map(a => `<tr><td>${a.fecha}</td><td>${a.usuario || 'Sistema'}</td><td>${a.accion} en ${a.entidad}</td><td>${a.detalles}</td></tr>`).join('');
+    }
+
+    // Form
+    const form = document.getElementById('formComunicado');
+    if (form) {
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('action', 'crear_comunicado');
+            formData.append('titulo', document.getElementById('comTitulo').value);
+            formData.append('contenido', document.getElementById('comContenido').value);
+            
+            const r = await fetch('api/comunicaciones.php', {method: 'POST', body: formData});
+            const d = await r.json();
+            alert(d.message);
+            if (d.status === 'success') {
+                document.getElementById('modalComunicado').classList.add('hidden');
+                loadComunicaciones();
+            }
+        };
+    }
+}
+
 async function loadFinanzas() {
     // Cargar Cartera
     const resC = await fetch('api/finanzas.php?action=list_cartera');

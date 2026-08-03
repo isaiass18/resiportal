@@ -36,6 +36,7 @@
                 <li class="active" data-view="dashboard"><i class="fa-solid fa-house"></i> <span>Dashboard</span></li>
                 <li data-view="porteria"><i class="fa-solid fa-shield-halved"></i> <span>Portería / Visitas</span></li>
                 <li data-view="finanzas"><i class="fa-solid fa-money-bill-wave"></i> <span>Finanzas / Cartera</span></li>
+                <li data-view="comunicaciones"><i class="fa-solid fa-bullhorn"></i> <span>Comunicaciones & Docs</span></li>
                 <li data-view="usuarios"><i class="fa-solid fa-users"></i> <span>Usuarios</span></li>
                 <li data-view="inmuebles"><i class="fa-solid fa-building"></i> <span>Inmuebles</span></li>
                 <li data-view="importar"><i class="fa-solid fa-file-import"></i> <span>Importar Datos</span></li>
@@ -103,6 +104,49 @@
                     <div class="stat-info">
                         <h3>Visitas Hoy</h3>
                         <p class="stat-number">18</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="tpl-comunicaciones">
+        <div class="view">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+                <h1 class="page-title" style="margin:0">Comunicaciones y Auditoría</h1>
+                <div>
+                    <button class="btn btn-primary" style="margin-right:8px;" onclick="document.getElementById('modalComunicado').classList.remove('hidden')"><i class="fa-solid fa-paper-plane"></i> Nuevo Comunicado</button>
+                    <button class="btn btn-primary" style="background:#4b5563" onclick="exportCSV()"><i class="fa-solid fa-file-export"></i> Exportar Datos (CSV)</button>
+                </div>
+            </div>
+
+            <!-- Modal Comunicado -->
+            <div id="modalComunicado" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
+                <h3>Crear Circular / Comunicado</h3>
+                <form id="formComunicado" style="display:flex; flex-direction:column; gap:16px; margin-top:16px;">
+                    <input type="text" id="comTitulo" placeholder="Título del comunicado" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
+                    <textarea id="comContenido" placeholder="Escribe el mensaje aquí..." required style="padding:8px; border-radius:4px; border:1px solid #ccc; min-height:80px;"></textarea>
+                    <div style="display:flex; gap:8px;">
+                        <button type="submit" class="btn btn-primary">Publicar</button>
+                        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalComunicado').classList.add('hidden')">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px;">
+                <div>
+                    <h3>Últimos Comunicados</h3>
+                    <div class="card" id="list-comunicados" style="display:flex; flex-direction:column; gap:16px;">
+                        Cargando...
+                    </div>
+                </div>
+                <div>
+                    <h3>Log de Auditoría (Admin)</h3>
+                    <div class="card">
+                        <table class="data-table">
+                            <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalles</th></tr></thead>
+                            <tbody id="tb-auditoria"><tr><td colspan="4">Cargando...</td></tr></tbody>
+                        </table>
                     </div>
                 </div>
             </div>

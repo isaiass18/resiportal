@@ -24,8 +24,8 @@ Este documento rastrea el progreso de implementación basado en el documento ori
 - [x] **Registro de pagos**: Ingreso de recibos de caja.
 - [x] **Cartera**: Trazabilidad y cruce contable.
 
-## 🔴 4. Pendiente (Sprint 3 - Comunicaciones)
-- [ ] **Comunicados**: Cartelera digital para enviar circulares.
-- [ ] **Documentos**: Gestor documental para actas y manuales.
-- [ ] **Reportes básicos**: Exportación a Excel/PDF de las diferentes tablas.
-- [ ] **Auditoría**: Logs invisibles de todas las transacciones.
+## 🟢 4. Implementado (Sprint 3 - Comunicaciones)
+- [x] **Comunicados**: Cartelera digital para enviar circulares.
+- [x] **Documentos**: Gestor documental para actas y manuales.
+- [x] **Reportes básicos**: Exportación a Excel/PDF de las diferentes tablas.
+- [x] **Auditoría**: Logs invisibles de todas las transacciones.
