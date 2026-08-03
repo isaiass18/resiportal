@@ -2,37 +2,84 @@
 session_start();
 require_once 'config.php';
 header('Content-Type: application/json');
+if (!isset($_SESSION['user_id']) || !in_array($_SESSION['user_rol'], ['admin', 'vigilante'], true)) responseJSON('error', 'Sin permisos');
 
-if (!isset($_SESSION['user_id'])) responseJSON('error', 'No autorizado');
+$action = $_POST['action'] ?? $_GET['action'] ?? '';
+$userId = (int) $_SESSION['user_id'];
+$conjuntoId = (int) $_SESSION['conjunto_id'];
 
-$action = $_GET['action'] ?? '';
-$user_id = $_SESSION['user_id'];
+function inmuebleDelConjunto(PDO $pdo, int $inmuebleId, int $conjuntoId): bool
+{
+    $stmt = $pdo->prepare('SELECT id FROM inmuebles WHERE id = ? AND conjunto_id = ?');
+    $stmt->execute([$inmuebleId, $conjuntoId]);
+    return (bool) $stmt->fetch();
+}
 
 if ($action === 'list_visitantes') {
-    $stmt = $pdo->query("SELECT v.*, i.apartamento, u.nombre as autorizador FROM visitantes v LEFT JOIN inmuebles i ON v.inmueble_id = i.id LEFT JOIN usuarios u ON v.autorizado_por = u.id ORDER BY v.fecha_ingreso DESC LIMIT 50");
+    $stmt = $pdo->prepare('SELECT v.*, i.torre, i.apartamento FROM visitantes v JOIN inmuebles i ON i.id = v.inmueble_id WHERE i.conjunto_id = ? ORDER BY v.fecha_ingreso DESC LIMIT 50');
+    $stmt->execute([$conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
 }
-elseif ($action === 'list_minuta') {
-    $stmt = $pdo->query("SELECT m.*, u.nombre as vigilante FROM minuta_porteria m JOIN usuarios u ON m.vigilante_id = u.id ORDER BY m.fecha_registro DESC LIMIT 50");
+if ($action === 'list_minuta') {
+    $stmt = $pdo->prepare('SELECT m.*, u.nombre AS vigilante FROM minuta_porteria m JOIN usuarios u ON u.id = m.vigilante_id WHERE u.conjunto_id = ? ORDER BY m.fecha_registro DESC LIMIT 50');
+    $stmt->execute([$conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
 }
-elseif ($action === 'list_paquetes') {
-    $stmt = $pdo->query("SELECT p.*, i.apartamento, u.nombre as receptor FROM paquetes p LEFT JOIN inmuebles i ON p.inmueble_id = i.id LEFT JOIN usuarios u ON p.recibido_por = u.id ORDER BY p.fecha_recepcion DESC LIMIT 50");
+if ($action === 'list_paquetes') {
+    $stmt = $pdo->prepare('SELECT p.*, i.torre, i.apartamento, u.nombre AS receptor FROM paquetes p JOIN inmuebles i ON i.id = p.inmueble_id LEFT JOIN usuarios u ON u.id = p.recibido_por WHERE i.conjunto_id = ? ORDER BY p.fecha_recepcion DESC LIMIT 50');
+    $stmt->execute([$conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
 }
-elseif ($action === 'list_directorio') {
-    // For MVP, return users with 'residente' role and their mock apartments if relationships exist.
-    // If we haven't linked them properly in the DB yet, we just return the users list.
-    $stmt = $pdo->query("
-        SELECT u.id, u.nombre, u.email, 
-               COALESCE(i.torre, 'N/A') as torre, 
-               COALESCE(i.apartamento, 'N/A') as apartamento 
-        FROM usuarios u 
-        LEFT JOIN relacion_inmuebles_usuarios r ON u.id = r.usuario_id 
-        LEFT JOIN inmuebles i ON r.inmueble_id = i.id 
-        WHERE u.rol = 'residente' 
-        ORDER BY i.apartamento ASC, u.nombre ASC
-    ");
+if ($action === 'list_directorio') {
+    $stmt = $pdo->prepare("SELECT u.id, u.nombre, u.email, COALESCE(i.torre, 'N/A') AS torre, COALESCE(i.apartamento, i.nomenclatura, 'N/A') AS apartamento FROM usuarios u LEFT JOIN relacion_inmuebles_usuarios r ON r.usuario_id = u.id LEFT JOIN inmuebles i ON i.id = r.inmueble_id WHERE u.rol IN ('residente', 'propietario') AND u.conjunto_id = ? ORDER BY apartamento, u.nombre");
+    $stmt->execute([$conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
 }
-?>
+
+if ($action === 'registrar_visita') {
+    $inmuebleId = (int) ($_POST['inmueble_id'] ?? 0);
+    $nombre = trim($_POST['nombre'] ?? '');
+    $documento = trim($_POST['documento'] ?? '');
+    $placa = strtoupper(trim($_POST['vehiculo_placa'] ?? ''));
+    if (!$inmuebleId || $nombre === '' || !inmuebleDelConjunto($pdo, $inmuebleId, $conjuntoId)) responseJSON('error', 'Visitante e inmueble válido son obligatorios');
+    $stmt = $pdo->prepare('INSERT INTO visitantes (inmueble_id, nombre, documento, vehiculo_placa, autorizado_por) VALUES (?, ?, ?, ?, ?)');
+    $stmt->execute([$inmuebleId, $nombre, $documento ?: null, $placa ?: null, $userId]);
+    responseJSON('success', 'Visita registrada');
+}
+if ($action === 'marcar_salida') {
+    $id = (int) ($_POST['visitante_id'] ?? 0);
+    $stmt = $pdo->prepare('UPDATE visitantes v JOIN inmuebles i ON i.id = v.inmueble_id SET v.fecha_salida = NOW() WHERE v.id = ? AND i.conjunto_id = ? AND v.fecha_salida IS NULL');
+    $stmt->execute([$id, $conjuntoId]);
+    if (!$stmt->rowCount()) responseJSON('error', 'Visita no encontrada o ya cerrada');
+    responseJSON('success', 'Salida registrada');
+}
+if ($action === 'recibir_paquete') {
+    $inmuebleId = (int) ($_POST['inmueble_id'] ?? 0);
+    $transportadora = trim($_POST['transportadora'] ?? '');
+    $descripcion = trim($_POST['descripcion'] ?? '');
+    if (!$inmuebleId || $transportadora === '' || !inmuebleDelConjunto($pdo, $inmuebleId, $conjuntoId)) responseJSON('error', 'Inmueble y transportadora son obligatorios');
+    $stmt = $pdo->prepare("INSERT INTO paquetes (inmueble_id, transportadora, descripcion, estado, recibido_por) VALUES (?, ?, ?, 'pendiente', ?)");
+    $stmt->execute([$inmuebleId, $transportadora, $descripcion ?: null, $userId]);
+    responseJSON('success', 'Paquete recibido');
+}
+if ($action === 'entregar_paquete') {
+    $id = (int) ($_POST['paquete_id'] ?? 0);
+    $stmt = $pdo->prepare("UPDATE paquetes p JOIN inmuebles i ON i.id = p.inmueble_id SET p.estado = 'entregado', p.fecha_entrega = NOW() WHERE p.id = ? AND i.conjunto_id = ? AND p.estado = 'pendiente'");
+    $stmt->execute([$id, $conjuntoId]);
+    if (!$stmt->rowCount()) responseJSON('error', 'Paquete no encontrado o ya entregado');
+    responseJSON('success', 'Entrega registrada');
+}
+if ($action === 'registrar_novedad') {
+    $asunto = trim($_POST['asunto'] ?? '');
+    $novedad = trim($_POST['novedad'] ?? '');
+    if ($asunto === '' || $novedad === '') responseJSON('error', 'Asunto y novedad son obligatorios');
+    $stmt = $pdo->prepare('INSERT INTO minuta_porteria (vigilante_id, asunto, novedad) VALUES (?, ?, ?)');
+    $stmt->execute([$userId, $asunto, $novedad]);
+    responseJSON('success', 'Novedad registrada en minuta');
+}
+if ($action === 'list_inmuebles') {
+    $stmt = $pdo->prepare('SELECT id, torre, apartamento, nomenclatura FROM inmuebles WHERE conjunto_id = ? ORDER BY torre, apartamento');
+    $stmt->execute([$conjuntoId]);
+    responseJSON('success', '', $stmt->fetchAll());
+}
+responseJSON('error', 'Acción no válida');

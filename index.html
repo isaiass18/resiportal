@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,60 +9,165 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
-    <link rel="stylesheet" href="css/style.css">
+    <!-- Swiper JS for sliders -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+    <link rel="stylesheet" href="css/style.css?v=20260803">
 </head>
+
 <body>
     <!-- Website Público / Home Page -->
     <div id="landing-screen" class="landing-overlay">
-        <!-- Navbar Público -->
+        <!-- Navbar Público WOW -->
         <nav class="public-nav">
             <div class="logo">🏢 <span>ResiPortal</span></div>
-            <div class="nav-links">
-                <button class="btn btn-primary" onclick="document.getElementById('portal-selection').classList.remove('hidden'); window.scrollTo({top:0, behavior:'smooth'});">Ingresar a Portales</button>
+            <div class="public-nav-actions">
+                <button class="portal-access-btn"
+                    onclick="document.getElementById('portal-selection').classList.remove('hidden'); window.scrollTo({top:0, behavior:'smooth'});"
+                    aria-label="Ingresar al portal">
+                    <i class="fa-solid fa-lock"></i><span>Ingresar</span>
+                </button>
             </div>
         </nav>
 
-        <!-- Hero Section -->
-        <section class="hero-section">
-            <div class="hero-content">
-                <h1>Tu Conjunto Residencial, <span>Más Conectado</span></h1>
-                <p>Bienvenido al portal oficial. Mantente informado, reserva zonas sociales y gestiona tus pagos desde un solo lugar.</p>
-            </div>
-        </section>
-
-        <!-- Selección de Portales (Oculto por defecto o flotante) -->
-        <section id="portal-selection" class="portal-selection-section hidden">
-            <div class="landing-content">
-                <h2 class="landing-title" style="font-size:32px;">Selecciona tu <span>Portal</span></h2>
-                <div class="portal-cards mt-4">
+        <!-- Selección de Portales (Modal de Cristal) -->
+        <div id="portal-selection" class="login-modal hidden"
+            style="z-index: 10000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(10px);">
+            <div class="login-box"
+                style="max-width: 800px; width: 90%; background: rgba(255,255,255,0.85); backdrop-filter: blur(20px);">
+                <button class="close-btn"
+                    onclick="document.getElementById('portal-selection').classList.add('hidden')"><i
+                        class="fa-solid fa-xmark"></i></button>
+                <h2 style="text-align: center; font-size: 32px; font-weight: 800; margin-bottom: 32px;">Selecciona tu
+                    <span>Portal</span>
+                </h2>
+                <div class="portal-cards">
                     <div class="portal-card" onclick="openLoginModal('residente')">
                         <i class="fa-solid fa-house-user"></i>
-                        <h3>Portal Residentes</h3>
-                        <p>Estados de cuenta, reservas y cartelera</p>
+                        <h3>Residentes</h3>
                     </div>
                     <div class="portal-card" onclick="openLoginModal('vigilante')">
                         <i class="fa-solid fa-shield-halved"></i>
-                        <h3>Portal Seguridad</h3>
-                        <p>Control de acceso, minuta y paquetes</p>
+                        <h3>Seguridad</h3>
                     </div>
                     <div class="portal-card" onclick="openLoginModal('admin')">
                         <i class="fa-solid fa-briefcase"></i>
-                        <h3>Portal Administración</h3>
-                        <p>Gestión integral, métricas y finanzas</p>
+                        <h3>Administración</h3>
                     </div>
                 </div>
-                <button class="btn btn-ghost mt-4" onclick="document.getElementById('portal-selection').classList.add('hidden')">Ocultar</button>
+            </div>
+        </div>
+
+        <!-- Hero Section WOW -->
+        <section class="hero-section">
+            <div class="hero-content">
+                <h1>Tu Conjunto Residencial,<br><span>Más Conectado</span></h1>
+                <p>Experimenta la máxima comodidad gestionando tu hogar desde un solo lugar. Eventos, pagos y zonas
+                    sociales a un clic de distancia.</p>
+                <div class="hero-buttons">
+                    <button class="btn btn-primary"
+                        onclick="document.getElementById('seccion-eventos').scrollIntoView({behavior: 'smooth'})">Explorar
+                        Comunidad</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sección de Próximos Eventos -->
+        <section id="seccion-eventos" class="eventos-section">
+            <div class="public-container">
+                <h2 style="font-size:36px; font-weight:800; text-align:center; margin-bottom:16px;">Próximos
+                    <span>Eventos</span>
+                </h2>
+                <p style="text-align:center; color:var(--text-muted); font-size:18px;">No te pierdas las actividades
+                    exclusivas para nuestra comunidad.</p>
+
+                <div id="listaEventosPublicos" class="eventos-grid">
+                    <!-- Los eventos se cargarán por JS -->
+                    <div style="grid-column: 1 / -1; text-align:center; padding: 40px; color:var(--text-muted);">
+                        Cargando eventos...</div>
+                </div>
             </div>
         </section>
 
         <!-- Cartelera Pública -->
-        <section class="public-cartelera-section">
+        <!-- Conoce nuestras Instalaciones (Zonas Sociales) -->
+        <section class="public-zonas-section">
             <div class="public-container">
-                <h2>Cartelera Pública</h2>
-                <p style="color:var(--text-muted); margin-bottom:32px;">Últimos comunicados y noticias del conjunto residencial.</p>
-                <div id="public-cartelera-list" style="display:flex; flex-direction:column; gap:24px;">
-                    <!-- Los comunicados se cargarán aquí por JS -->
-                    Cargando comunicados...
+                <h2 style="text-align: center; margin-bottom: 8px;">Conoce Nuestras Instalaciones</h2>
+                <p style="text-align: center; color:var(--text-muted); margin-bottom:48px;">Espacios diseñados para tu
+                    comodidad y bienestar.</p>
+
+                <div id="public-zonas-grid" class="zonas-grid">
+                    <!-- Zonas generadas por JS -->
+                    Cargando zonas sociales...
+                </div>
+            </div>
+        </section>
+
+        <!-- Detalle público de una zona social -->
+        <div id="zona-detalle-modal" class="zona-detalle-modal hidden" role="dialog" aria-modal="true"
+            aria-labelledby="zona-detalle-titulo">
+            <div class="zona-detalle-dialog">
+                <button class="zona-detalle-close" type="button" onclick="cerrarDetalleZona()"
+                    aria-label="Cerrar detalle de zona"><i class="fa-solid fa-xmark"></i></button>
+                <div id="zona-detalle-imagen" class="zona-detalle-hero"></div>
+                <div class="zona-detalle-content">
+                    <p class="zona-detalle-label">Zona social</p>
+                    <h2 id="zona-detalle-titulo">Cargando zona…</h2>
+                    <p id="zona-detalle-descripcion" class="zona-detalle-descripcion"></p>
+
+                    <div class="zona-detalle-specs">
+                        <div><i class="fa-solid fa-users"></i><span>Aforo</span><strong
+                                id="zona-detalle-aforo">—</strong></div>
+                        <div><i class="fa-regular fa-clock"></i><span>Horario</span><strong
+                                id="zona-detalle-horario">—</strong></div>
+                        <div><i class="fa-solid fa-receipt"></i><span>Tarifa</span><strong
+                                id="zona-detalle-tarifa">—</strong></div>
+                    </div>
+
+                    <section class="zona-detalle-rules">
+                        <h3><i class="fa-solid fa-list-check"></i> Normas de uso</h3>
+                        <p id="zona-detalle-reglamento">Cargando normas…</p>
+                    </section>
+
+                    <section class="zona-detalle-availability">
+                        <div class="zona-detalle-section-heading">
+                            <div>
+                                <h3>Disponibilidad</h3>
+                                <p>Las fechas marcadas tienen una solicitud o reserva activa.</p>
+                            </div>
+                            <div class="zona-availability-legends" aria-label="Leyenda de disponibilidad">
+                                <span class="zona-availability-legend is-available"><i></i> Disponible</span>
+                                <span class="zona-availability-legend is-pending"><i></i> Solicitud pendiente</span>
+                                <span class="zona-availability-legend is-reserved"><i></i> Reservado</span>
+                            </div>
+                        </div>
+                        <div id="public-zona-calendar"></div>
+                    </section>
+
+                    <div class="zona-detalle-footer">
+                        <p><i class="fa-solid fa-lock"></i> Para solicitar una reserva debes iniciar sesión.</p>
+                        <button class="btn btn-primary" type="button" onclick="abrirLoginParaReserva()">Iniciar sesión
+                            para reservar <i class="fa-solid fa-arrow-right"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cartelera Pública (Animada con Swiper) -->
+        <section class="public-cartelera-section" style="background: var(--surface); padding: 80px 0;">
+            <div class="public-container">
+                <h2 style="text-align: center;">Últimas Novedades</h2>
+                <p style="text-align: center; color:var(--text-muted); margin-bottom:48px;">Mantente informado de lo que
+                    pasa en tu conjunto.</p>
+
+                <div class="swiper carteleraSwiper">
+                    <div class="swiper-wrapper" id="public-cartelera-list">
+                        <!-- Slides generados por JS -->
+                    </div>
+                    <div class="swiper-pagination"></div>
+                    <div class="swiper-button-prev"></div>
+                    <div class="swiper-button-next"></div>
                 </div>
             </div>
         </section>
@@ -74,10 +180,32 @@
                 <p>Ingresa tus credenciales</p>
                 <form id="loginForm">
                     <input type="email" id="loginEmail" placeholder="Correo electrónico" required>
-                    <input type="password" id="loginPassword" placeholder="Contraseña" required>
+                    <div style="position: relative;">
+                        <input type="password" id="loginPassword" placeholder="Contraseña" required
+                            style="width: 100%; padding-right: 40px;">
+                        <button type="button" onclick="togglePassword()"
+                            style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-muted);">
+                            <i id="toggleIcon" class="fa-solid fa-eye"></i>
+                        </button>
+                    </div>
                     <button type="submit" class="btn btn-primary" style="width: 100%">Entrar al Portal</button>
                     <div id="loginError" class="login-error"></div>
                 </form>
+                <script>
+                    function togglePassword() {
+                        const pwd = document.getElementById('loginPassword');
+                        const icon = document.getElementById('toggleIcon');
+                        if (pwd.type === 'password') {
+                            pwd.type = 'text';
+                            icon.classList.remove('fa-eye');
+                            icon.classList.add('fa-eye-slash');
+                        } else {
+                            pwd.type = 'password';
+                            icon.classList.remove('fa-eye-slash');
+                            icon.classList.add('fa-eye');
+                        }
+                    }
+                </script>
             </div>
         </div>
     </div>
@@ -92,21 +220,27 @@
                 </div>
             </div>
             <ul class="nav-links">
-                <li class="active" data-view="dashboard"><i class="fa-solid fa-house"></i> <span>Dashboard</span></li>
-                <li data-view="home-residente"><i class="fa-solid fa-house-user"></i> <span>Inicio (Cartelera)</span></li>
+                <li class="active" data-view="dashboard"><i class="fa-solid fa-house"></i> <span>Panel
+                        administración</span></li>
+                <li data-view="home-residente"><i class="fa-solid fa-house-user"></i> <span>Inicio (Cartelera)</span>
+                </li>
                 <li data-view="mis-pagos"><i class="fa-solid fa-file-invoice"></i> <span>Mis Pagos</span></li>
                 <li data-view="porteria"><i class="fa-solid fa-shield-halved"></i> <span>Portería / Visitas</span></li>
-                <li data-view="finanzas"><i class="fa-solid fa-money-bill-wave"></i> <span>Finanzas / Cartera</span></li>
-                <li data-view="comunicaciones"><i class="fa-solid fa-bullhorn"></i> <span>Comunicaciones & Docs</span></li>
+                <li data-view="finanzas"><i class="fa-solid fa-money-bill-wave"></i> <span>Finanzas / Cartera</span>
+                </li>
+                <li data-view="comunicaciones"><i class="fa-solid fa-bullhorn"></i> <span>Novedades y Eventos</span>
+                </li>
                 <li data-view="usuarios"><i class="fa-solid fa-users"></i> <span>Usuarios</span></li>
                 <li data-view="inmuebles"><i class="fa-solid fa-building"></i> <span>Inmuebles</span></li>
                 <li data-view="importar"><i class="fa-solid fa-file-import"></i> <span>Importar Datos</span></li>
                 <li data-view="configuracion"><i class="fa-solid fa-gear"></i> <span>Configuración</span></li>
+                <li data-view="perfil"><i class="fa-solid fa-key"></i> <span>Mi contraseña</span></li>
                 <li data-view="zonas"><i class="fa-solid fa-tree"></i> <span>Zonas Sociales</span></li>
                 <li data-view="reclamaciones"><i class="fa-solid fa-clipboard-list"></i> <span>Reclamaciones</span></li>
             </ul>
             <div class="sidebar-footer">
-                <button id="logoutBtn" class="btn-ghost"><i class="fa-solid fa-arrow-right-from-bracket"></i> <span>Salir</span></button>
+                <button id="logoutBtn" class="btn-ghost"><i class="fa-solid fa-arrow-right-from-bracket"></i>
+                    <span>Salir</span></button>
             </div>
         </nav>
 
@@ -114,20 +248,21 @@
         <main class="main-content">
             <header class="topbar">
                 <div style="display:flex; align-items:center; gap:16px;">
-                    <button id="menuToggle" class="menu-toggle"><i class="fa-solid fa-bars"></i></button>
-                    <div class="search-bar">
-                        <i class="fa-solid fa-search"></i>
-                        <input type="text" placeholder="Buscar residentes, inmuebles...">
-                    </div>
+                    <button id="menuToggle" class="btn-ghost" style="font-size:20px; padding:8px;"><i
+                            class="fa-solid fa-bars"></i></button>
+                    <span style="font-size:16px; font-weight:600;">Bienvenido, <span id="topbarName"
+                            style="color:var(--primary)">Usuario</span></span>
                 </div>
                 <div class="user-profile">
                     <div class="notifications">
                         <i class="fa-regular fa-bell"></i>
                         <span class="badge">0</span>
                     </div>
-                    <div class="avatar">
-                        <img src="https://ui-avatars.com/api/?name=Admin&background=eff6ff&color=3b82f6" alt="User">
-                        <span id="topbarName">Cargando...</span>
+                    <div class="avatar" style="display:flex; align-items:center; gap:8px;">
+                        <img id="topbarAvatar" src="https://ui-avatars.com/api/?name=U&background=eff6ff&color=3b82f6"
+                            alt="User" style="width:32px; height:32px; border-radius:50%;">
+                        <span id="topbarRole"
+                            style="font-size:14px; color:var(--text-muted); font-weight:500;">Cargando...</span>
                     </div>
                 </div>
             </header>
@@ -141,46 +276,64 @@
     <!-- Templates -->
     <template id="tpl-dashboard">
         <div class="view dashboard-view">
-            <h1 class="page-title">Resumen del Conjunto</h1>
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-icon" style="background: var(--primary-light); color: var(--primary)"><i class="fa-solid fa-users"></i></div>
-                    <div class="stat-info">
-                        <h3>Residentes</h3>
-                        <p class="stat-number">342</p>
-                    </div>
+            <div class="admin-dashboard-heading">
+                <div>
+                    <p class="admin-dashboard-eyebrow"><i class="fa-solid fa-shield-halved"></i> Administración</p>
+                    <h1 class="page-title">Panel del conjunto</h1>
+                    <p class="admin-dashboard-description">Publica novedades y eventos para que residentes y visitantes
+                        los vean en el inicio del portal.</p>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background: #dcfce7; color: #16a34a"><i class="fa-solid fa-building"></i></div>
-                    <div class="stat-info">
-                        <h3>Apartamentos</h3>
-                        <p class="stat-number">120</p>
-                    </div>
+                <div class="admin-dashboard-actions">
+                    <button class="btn btn-ghost admin-action-secondary" onclick="abrirGestionContenido('evento')"><i
+                            class="fa-regular fa-calendar-plus"></i> Crear evento</button>
+                    <button class="btn btn-primary" onclick="abrirGestionContenido('novedad')"><i
+                            class="fa-solid fa-bullhorn"></i> Publicar novedad</button>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background: #fee2e2; color: #dc2626"><i class="fa-solid fa-money-bill-wave"></i></div>
-                    <div class="stat-info">
-                        <h3>Cartera (Mora)</h3>
-                        <p class="stat-number">$1.2M</p>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background: #fef3c7; color: #d97706"><i class="fa-solid fa-shield-halved"></i></div>
-                    <div class="stat-info">
-                        <h3>Visitas Hoy</h3>
-                        <p class="stat-number">18</p>
-                    </div>
             </div>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
-                <div class="card">
-                    <h3>Estado de Cartera</h3>
-                    <canvas id="chartCartera" style="max-height: 300px;"></canvas>
+
+            <div class="admin-summary-grid">
+                <div class="admin-summary-card">
+                    <div class="admin-summary-icon icon-news"><i class="fa-solid fa-bullhorn"></i></div>
+                    <div><span>Novedades publicadas</span><strong id="admin-total-novedades">—</strong></div>
                 </div>
-                <div class="card">
-                    <h3>Reservas por Zona Social</h3>
-                    <canvas id="chartReservas" style="max-height: 300px;"></canvas>
+                <div class="admin-summary-card">
+                    <div class="admin-summary-icon icon-events"><i class="fa-regular fa-calendar"></i></div>
+                    <div><span>Próximos eventos</span><strong id="admin-total-eventos">—</strong></div>
                 </div>
+                <div class="admin-summary-card">
+                    <div class="admin-summary-icon icon-finance"><i class="fa-solid fa-wallet"></i></div>
+                    <div><span>Cartera pendiente</span><strong id="admin-total-cartera">—</strong></div>
+                </div>
+            </div>
+
+            <div class="admin-content-grid">
+                <section class="card admin-feed-card">
+                    <div class="admin-section-title">
+                        <div>
+                            <h3>Novedades recientes</h3>
+                            <p>Estas publicaciones aparecen en “Últimas novedades” del inicio.</p>
+                        </div>
+                        <button class="admin-text-link" onclick="abrirGestionContenido('novedad')">Gestionar <i
+                                class="fa-solid fa-arrow-right"></i></button>
+                    </div>
+                    <div id="admin-dashboard-novedades" class="admin-feed-list">
+                        <p class="admin-empty-state">Cargando novedades…</p>
+                    </div>
+                </section>
+
+                <section class="card admin-feed-card">
+                    <div class="admin-section-title">
+                        <div>
+                            <h3>Próximos eventos</h3>
+                            <p>Se muestran automáticamente en el inicio público.</p>
+                        </div>
+                        <button class="admin-text-link" onclick="abrirGestionContenido('evento')">Gestionar <i
+                                class="fa-solid fa-arrow-right"></i></button>
+                    </div>
+                    <div id="admin-dashboard-eventos" class="admin-feed-list">
+                        <p class="admin-empty-state">Cargando eventos…</p>
+                    </div>
+                </section>
             </div>
         </div>
     </template>
@@ -200,24 +353,33 @@
                     <div class="card" style="text-align:center; padding:32px;">
                         <h4 style="color:var(--text-muted); margin-bottom:8px;">Deuda Actual (Mora)</h4>
                         <p style="font-size:36px; font-weight:700; color:#dc2626;" id="residente-mora">Cargando...</p>
-                        <button class="btn btn-primary mt-4" style="width:100%" onclick="document.querySelector('[data-view=\'mis-pagos\']').click()">Reportar un Pago</button>
+                        <button class="btn btn-primary mt-4" style="width:100%"
+                            onclick="document.querySelector('[data-view=\'mis-pagos\']').click()">Reportar un
+                            Pago</button>
                     </div>
                     <h3 class="mt-4">Accesos Rápidos</h3>
                     <div class="card" style="display:flex; flex-direction:column; gap:12px;">
-                        <button class="btn btn-ghost" onclick="document.querySelector('[data-view=\'zonas\']').click()"><i class="fa-solid fa-calendar-plus"></i> Reservar Zona Social</button>
-                        <button class="btn btn-ghost" onclick="document.querySelector('[data-view=\'reclamaciones\']').click()"><i class="fa-solid fa-bullhorn"></i> Radicar PQRS</button>
+                        <button class="btn btn-ghost"
+                            onclick="document.querySelector('[data-view=\'zonas\']').click()"><i
+                                class="fa-solid fa-calendar-plus"></i> Reservar Zona Social</button>
+                        <button class="btn btn-ghost"
+                            onclick="document.querySelector('[data-view=\'reclamaciones\']').click()"><i
+                                class="fa-solid fa-bullhorn"></i> Radicar PQRS</button>
                     </div>
                 </div>
             </div>
-            
+
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; margin-top:24px;">
                 <!-- Vehículos -->
-                <div class="card">
+                <div class="card resident-asset-card">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <h3>Mis Vehículos</h3>
-                        <button class="btn btn-primary" onclick="document.getElementById('formNuevoVehiculo').classList.toggle('hidden')">+ Añadir</button>
+                        <button class="btn btn-primary"
+                            onclick="document.getElementById('formNuevoVehiculo').classList.toggle('hidden')">+
+                            Añadir</button>
                     </div>
-                    <form id="formNuevoVehiculo" class="hidden mt-4" style="background:#f8fafc; padding:16px; border-radius:8px;">
+                    <form id="formNuevoVehiculo" class="hidden mt-4"
+                        style="background:#f8fafc; padding:16px; border-radius:8px;">
                         <input type="text" name="placa" class="input" placeholder="Placa" required>
                         <select name="tipo" class="input mt-2" required>
                             <option value="">Tipo...</option>
@@ -230,24 +392,47 @@
                         <button type="submit" class="btn btn-primary mt-4" style="width:100%">Guardar</button>
                     </form>
                     <table class="data-table mt-4">
-                        <thead><tr><th>Placa</th><th>Tipo</th><th>Marca</th></tr></thead>
-                        <tbody id="tb-mis-vehiculos"><tr><td colspan="3">Cargando...</td></tr></tbody>
+                        <thead>
+                            <tr>
+                                <th>Placa</th>
+                                <th>Tipo</th>
+                                <th>Marca</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tb-mis-vehiculos">
+                            <tr>
+                                <td colspan="3">Cargando...</td>
+                            </tr>
+                        </tbody>
                     </table>
                 </div>
-                
+
                 <!-- Mascotas -->
-                <div class="card">
+                <div class="card resident-asset-card">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <h3>Mis Mascotas</h3>
-                        <button class="btn btn-primary" onclick="document.getElementById('formNuevaMascota').classList.toggle('hidden')">+ Añadir</button>
+                        <button class="btn btn-primary"
+                            onclick="document.getElementById('formNuevaMascota').classList.toggle('hidden')">+
+                            Añadir</button>
                     </div>
-                    <form id="formNuevaMascota" class="hidden mt-4" style="background:#f8fafc; padding:16px; border-radius:8px;">
-                        <textarea name="descripcion" class="input" placeholder="Descripción (Ej: Perro Golden Retriever dorado llamado Max)" required rows="3"></textarea>
+                    <form id="formNuevaMascota" class="hidden mt-4"
+                        style="background:#f8fafc; padding:16px; border-radius:8px;">
+                        <textarea name="descripcion" class="input"
+                            placeholder="Descripción (Ej: Perro Golden Retriever dorado llamado Max)" required
+                            rows="3"></textarea>
                         <button type="submit" class="btn btn-primary mt-4" style="width:100%">Guardar</button>
                     </form>
                     <table class="data-table mt-4">
-                        <thead><tr><th>Descripción</th></tr></thead>
-                        <tbody id="tb-mis-mascotas"><tr><td>Cargando...</td></tr></tbody>
+                        <thead>
+                            <tr>
+                                <th>Descripción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tb-mis-mascotas">
+                            <tr>
+                                <td>Cargando...</td>
+                            </tr>
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -257,17 +442,35 @@
     <template id="tpl-configuracion">
         <div class="view">
             <h1 class="page-title">Configuración del Conjunto</h1>
-            <div class="card" style="max-width: 600px; margin: 0 auto;">
+            <div class="card" style="max-width: 600px; margin: 40px auto; padding: 40px;">
+                <div style="text-align: center; margin-bottom: 32px;">
+                    <i class="fa-solid fa-building-flag"
+                        style="font-size: 48px; color: var(--primary); margin-bottom: 16px;"></i>
+                    <h2 style="font-size: 24px; color: var(--text-main);">Datos Oficiales</h2>
+                    <p style="color: var(--text-muted);">Personaliza la identidad visual de tu portal.</p>
+                </div>
                 <form id="formConfiguracion">
-                    <div class="form-group">
-                        <label>Nombre de la Copropiedad</label>
-                        <input type="text" id="config-nombre" name="nombre" class="input" required>
+                    <div class="form-group" style="margin-bottom: 24px;">
+                        <label style="font-weight: 500; margin-bottom: 8px; display: block;">Nombre de la
+                            Copropiedad</label>
+                        <input type="text" id="config-nombre" name="nombre" class="input" required
+                            style="padding: 12px; font-size: 16px;">
                     </div>
-                    <div class="form-group mt-4">
-                        <label>URL del Logo (Opcional)</label>
-                        <input type="url" id="config-logo" name="logo_url" class="input" placeholder="https://ejemplo.com/logo.png">
+                    <div class="form-group" style="margin-bottom:16px;">
+                        <label style="font-weight:500; margin-bottom:8px; display:block;">URL del logo
+                            (opcional)</label>
+                        <input type="url" id="config-logo" name="logo_url" class="input"
+                            placeholder="https://ejemplo.com/logo.png" style="padding:12px; font-size:16px;">
                     </div>
-                    <button type="submit" class="btn btn-primary mt-4" style="width:100%">Guardar Cambios</button>
+                    <div class="form-group" style="margin-bottom: 32px;">
+                        <label style="font-weight:500; margin-bottom:8px; display:block;">O subir logo (JPG, PNG o WEBP,
+                            máximo 3MB)</label>
+                        <input type="file" id="config-logo-archivo" name="logo_archivo"
+                            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="input">
+                        <img id="config-logo-preview" class="logo-preview hidden" alt="Vista previa del logo">
+                    </div>
+                    <button type="submit" class="btn btn-primary"
+                        style="width:100%; padding: 14px; font-size: 16px;">Guardar Cambios</button>
                 </form>
             </div>
         </div>
@@ -275,30 +478,59 @@
 
     <template id="tpl-mis-pagos">
         <div class="view">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
-                <h1 class="page-title" style="margin:0">Mis Pagos</h1>
-                <button class="btn btn-primary" onclick="document.getElementById('modalReportarPago').classList.remove('hidden')"><i class="fa-solid fa-cloud-arrow-up"></i> Reportar Nuevo Pago</button>
-            </div>
-            
-            <div id="modalReportarPago" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
-                <h3>Reportar Consignación o Transferencia</h3>
-                <form id="formReportarPago" style="display:flex; gap:16px; margin-top:16px;">
-                    <input type="number" id="repPagoValor" placeholder="Valor Consignado ($)" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
-                    <input type="text" id="repPagoRef" placeholder="Número de Referencia" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
-                    <select id="repPagoMetodo" style="padding:8px; border-radius:4px; border:1px solid #ccc;">
-                        <option value="transferencia">Transferencia Bancaria</option>
-                        <option value="consignacion">Consignación en Taquilla</option>
-                    </select>
-                    <button type="submit" class="btn btn-primary">Enviar Reporte</button>
-                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalReportarPago').classList.add('hidden')">Cancelar</button>
-                </form>
+            <h1 class="page-title">Estado de Cuenta y Pagos</h1>
+
+            <div
+                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-bottom: 32px;">
+                <div class="card"
+                    style="background: linear-gradient(135deg, var(--primary), #3b82f6); color: white; border: none;">
+                    <h3 style="color: white; opacity: 0.9; margin-bottom: 8px;">Deuda Actual</h3>
+                    <h2 id="txtDeudaResidente" style="font-size: 36px; margin-bottom: 16px;">$0</h2>
+                    <p id="txtInmuebleResidente" style="opacity: 0.9; margin: 0;"><i class="fa-solid fa-building"></i>
+                        Cargando inmueble...</p>
+                </div>
+
+                <div class="card">
+                    <h3 style="margin-bottom: 16px;">Reportar Pago</h3>
+                    <form id="formReportarPago" style="display:flex; flex-direction:column; gap:16px;">
+                        <input type="number" id="repPagoValor" placeholder="Valor Pagado ($)" required
+                            style="padding:10px; border-radius:6px; border:1px solid #ccc;">
+                        <input type="text" id="repPagoRef" placeholder="Referencia / Comprobante" required
+                            style="padding:10px; border-radius:6px; border:1px solid #ccc;">
+                        <textarea id="repPagoDescripcion" placeholder="Descripción (opcional)" rows="2"
+                            style="padding:10px; border-radius:6px; border:1px solid #ccc; font-family:inherit;"></textarea>
+                        <input type="file" id="repPagoSoporte"
+                            accept=".jpg,.jpeg,.png,.pdf,application/pdf,image/jpeg,image/png"
+                            style="padding:8px; border-radius:6px; border:1px solid #ccc;"
+                            aria-label="Soporte opcional JPG, PNG o PDF máximo 5MB">
+                        <select id="repPagoMetodo" style="padding:10px; border-radius:6px; border:1px solid #ccc;">
+                            <option value="transferencia">Transferencia Bancaria</option>
+                            <option value="consignacion">Consignación en Taquilla</option>
+                            <option value="pse">Pago por PSE</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary" style="padding:12px;">Enviar Reporte</button>
+                    </form>
+                </div>
             </div>
 
-            <div class="card">
-                <h3>Historial de Pagos</h3>
-                <table class="data-table mt-4">
-                    <thead><tr><th>Fecha</th><th>Valor</th><th>Método</th><th>Referencia</th><th>Estado</th></tr></thead>
-                    <tbody id="tb-mis-pagos"><tr><td colspan="5">Cargando...</td></tr></tbody>
+            <div class="card" style="overflow-x: auto;">
+                <h3 style="margin-bottom: 16px;">Historial de Pagos</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Valor</th>
+                            <th>Método</th>
+                            <th>Referencia / descripción</th>
+                            <th>Soporte</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-mis-pagos">
+                        <tr>
+                            <td colspan="5">Cargando...</td>
+                        </tr>
+                    </tbody>
                 </table>
             </div>
         </div>
@@ -307,29 +539,82 @@
     <template id="tpl-comunicaciones">
         <div class="view">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
-                <h1 class="page-title" style="margin:0">Comunicaciones y Auditoría</h1>
+                <h1 class="page-title" style="margin:0">Novedades y eventos</h1>
                 <div>
-                    <button class="btn btn-primary" style="margin-right:8px;" onclick="document.getElementById('modalComunicado').classList.remove('hidden')"><i class="fa-solid fa-paper-plane"></i> Nuevo Comunicado</button>
-                    <button class="btn btn-primary" style="background:#4b5563" onclick="exportCSV()"><i class="fa-solid fa-file-export"></i> Exportar Datos (CSV)</button>
+                    <button class="btn btn-primary" style="margin-right:8px;"
+                        onclick="document.getElementById('modalEvento').classList.remove('hidden')"><i
+                            class="fa-solid fa-calendar-plus"></i> Nuevo Evento</button>
+                    <button class="btn btn-primary" style="margin-right:8px;"
+                        onclick="document.getElementById('modalComunicado').classList.remove('hidden')"><i
+                            class="fa-solid fa-bullhorn"></i> Publicar novedad</button>
+                    <button class="btn btn-primary" style="background:#4b5563" onclick="exportCSV()"><i
+                            class="fa-solid fa-file-export"></i> Exportar (CSV)</button>
                 </div>
             </div>
 
-            <!-- Modal Comunicado -->
-            <div id="modalComunicado" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
-                <h3>Crear Circular / Comunicado</h3>
-                <form id="formComunicado" style="display:flex; flex-direction:column; gap:16px; margin-top:16px;">
-                    <input type="text" id="comTitulo" placeholder="Título del comunicado" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
-                    <textarea id="comContenido" placeholder="Escribe el mensaje aquí..." required style="padding:8px; border-radius:4px; border:1px solid #ccc; min-height:80px;"></textarea>
+            <!-- Modal Evento -->
+            <div id="modalEvento" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
+                <h3>Crear Nuevo Evento</h3>
+                <form id="formEvento" style="display:flex; flex-direction:column; gap:16px; margin-top:16px;">
+                    <input type="text" id="evTitulo" placeholder="Título del evento (Ej. Asamblea General)" required
+                        style="padding:8px; border-radius:4px; border:1px solid #ccc;">
+                    <input type="datetime-local" id="evFecha" required
+                        style="padding:8px; border-radius:4px; border:1px solid #ccc;">
+                    <input type="text" id="evLugar" placeholder="Lugar (Ej. Salón Comunal)" required
+                        style="padding:8px; border-radius:4px; border:1px solid #ccc;">
+                    <textarea id="evDescripcion" placeholder="Descripción corta del evento..." required
+                        style="padding:8px; border-radius:4px; border:1px solid #ccc; min-height:60px;"></textarea>
                     <div style="display:flex; gap:8px;">
-                        <button type="submit" class="btn btn-primary">Publicar</button>
-                        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalComunicado').classList.add('hidden')">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Publicar Evento</button>
+                        <button type="button" class="btn btn-ghost"
+                            onclick="document.getElementById('modalEvento').classList.add('hidden')">Cancelar</button>
                     </div>
                 </form>
             </div>
 
+            <!-- Modal Novedad -->
+            <div id="modalComunicado" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
+                <h3>Publicar novedad en el inicio</h3>
+                <p style="color:var(--text-muted); margin-top:6px;">Se mostrará automáticamente en la cartelera del home
+                    público y a los residentes.</p>
+                <form id="formComunicado" style="display:flex; flex-direction:column; gap:16px; margin-top:16px;">
+                    <input type="text" id="comTitulo" placeholder="Título de la novedad" required
+                        style="padding:8px; border-radius:4px; border:1px solid #ccc;">
+                    <textarea id="comContenido" placeholder="Escribe la información que verá la comunidad..." required
+                        style="padding:8px; border-radius:4px; border:1px solid #ccc; min-height:80px;"></textarea>
+                    <div style="display:flex; gap:8px;">
+                        <button type="submit" class="btn btn-primary">Publicar novedad</button>
+                        <button type="button" class="btn btn-ghost"
+                            onclick="document.getElementById('modalComunicado').classList.add('hidden')">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Tablas de datos -->
+            <div style="margin-bottom:24px;">
+                <h3>Gestión de Eventos Públicos</h3>
+                <div class="card">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Título</th>
+                                <th>Lugar</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tb-eventos-admin">
+                            <tr>
+                                <td colspan="4">Cargando...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px;">
                 <div>
-                    <h3>Últimos Comunicados</h3>
+                    <h3>Novedades publicadas</h3>
                     <div class="card" id="list-comunicados" style="display:flex; flex-direction:column; gap:16px;">
                         Cargando...
                     </div>
@@ -338,8 +623,19 @@
                     <h3>Log de Auditoría (Admin)</h3>
                     <div class="card">
                         <table class="data-table">
-                            <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalles</th></tr></thead>
-                            <tbody id="tb-auditoria"><tr><td colspan="4">Cargando...</td></tr></tbody>
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Usuario</th>
+                                    <th>Acción</th>
+                                    <th>Detalles</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tb-auditoria">
+                                <tr>
+                                    <td colspan="4">Cargando...</td>
+                                </tr>
+                            </tbody>
                         </table>
                     </div>
                 </div>
@@ -352,56 +648,131 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
                 <h1 class="page-title" style="margin:0">Finanzas y Cartera</h1>
                 <div>
-                    <button class="btn btn-primary" style="margin-right:8px;" onclick="document.getElementById('modalCobro').classList.remove('hidden')"><i class="fa-solid fa-file-invoice-dollar"></i> Generar Cobro Masivo</button>
-                    <button class="btn btn-primary" style="background:#16a34a" onclick="document.getElementById('modalPago').classList.remove('hidden')"><i class="fa-solid fa-hand-holding-dollar"></i> Registrar Pago</button>
+                    <button class="btn btn-primary" style="margin-right:8px;" onclick="abrirModalRegistrarPago()"><i
+                            class="fa-solid fa-circle-plus"></i> Registrar Pago</button>
+                    <button class="btn btn-primary" style="margin-right:8px;"
+                        onclick="document.getElementById('modalCobro').classList.remove('hidden')"><i
+                            class="fa-solid fa-file-invoice-dollar"></i> Generar Cobro Masivo</button>
                 </div>
             </div>
 
-            <!-- Modales Ocultos (Demo simple inline) -->
-            <div id="modalCobro" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
-                <h3>Generar Cobro Masivo (Administración)</h3>
-                <form id="formGenerarCobro" style="display:flex; gap:16px; margin-top:16px;">
-                    <input type="number" id="cobroValor" placeholder="Valor ($)" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
-                    <input type="number" id="cobroMes" placeholder="Mes (1-12)" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
-                    <input type="number" id="cobroAnio" placeholder="Año" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
-                    <button type="submit" class="btn btn-primary">Ejecutar Cobro</button>
-                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalCobro').classList.add('hidden')">Cancelar</button>
-                </form>
+            <div id="modalCobro" class="login-modal hidden" style="z-index:1000;">
+                <div class="login-box">
+                    <button class="close-btn" type="button"
+                        onclick="document.getElementById('modalCobro').classList.add('hidden')"><i
+                            class="fa-solid fa-xmark"></i></button>
+                    <h2 style="margin-bottom: 16px;">Generar Cuota Mensual</h2>
+                    <p style="color:var(--text-muted); margin-bottom:24px;">Esto cargará la deuda a todos los
+                        apartamentos.</p>
+                    <form id="formGenerarCobro" style="display:flex; flex-direction:column; gap:16px;">
+                        <input type="number" id="cobroValor" placeholder="Valor Cuota (Ej: 150000)" required
+                            style="padding:10px; border-radius:6px; border:1px solid #ccc;">
+                        <button type="submit" class="btn btn-primary" style="padding:12px;">Ejecutar Cobro a
+                            Todos</button>
+                    </form>
+                </div>
             </div>
 
-            <div id="modalPago" class="card hidden" style="margin-bottom:24px; border:2px solid #16a34a">
-                <h3>Registrar Pago de Inmueble</h3>
-                <form id="formRegistrarPago" style="display:flex; gap:16px; margin-top:16px;">
-                    <input type="number" id="pagoInmuebleId" placeholder="ID Inmueble" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
-                    <input type="number" id="pagoValor" placeholder="Valor ($)" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
-                    <select id="pagoMetodo" style="padding:8px; border-radius:4px; border:1px solid #ccc;">
-                        <option value="transferencia">Transferencia</option>
-                        <option value="efectivo">Efectivo</option>
-                    </select>
-                    <button type="submit" class="btn btn-primary" style="background:#16a34a">Registrar</button>
-                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalPago').classList.add('hidden')">Cancelar</button>
-                </form>
+            <div id="modalRegistrarPago" class="login-modal hidden" style="z-index:1000;">
+                <div class="login-box">
+                    <button class="close-btn" type="button"
+                        onclick="document.getElementById('modalRegistrarPago').classList.add('hidden')"><i
+                            class="fa-solid fa-xmark"></i></button>
+                    <h2 style="margin-bottom: 16px;">Registrar Pago</h2>
+                    <p style="color:var(--text-muted); margin-bottom:24px;">Queda aprobado de inmediato y descuenta la
+                        mora del inmueble seleccionado.</p>
+                    <form id="formRegistrarPago" style="display:flex; flex-direction:column; gap:16px;">
+                        <select id="pagoInmuebleId" required
+                            style="padding:10px; border-radius:6px; border:1px solid #ccc;">
+                            <option value="">Selecciona un inmueble...</option>
+                        </select>
+                        <input type="number" id="pagoValor" placeholder="Valor Pagado ($)" required
+                            style="padding:10px; border-radius:6px; border:1px solid #ccc;">
+                        <select id="pagoMetodo" style="padding:10px; border-radius:6px; border:1px solid #ccc;">
+                            <option value="efectivo">Efectivo</option>
+                            <option value="transferencia">Transferencia Bancaria</option>
+                            <option value="consignacion">Consignación en Taquilla</option>
+                            <option value="pse">Pago por PSE (registrado manualmente)</option>
+                        </select>
+                        <input type="text" id="pagoReferencia" placeholder="Referencia / Comprobante (opcional)"
+                            style="padding:10px; border-radius:6px; border:1px solid #ccc;">
+                        <textarea id="pagoDescripcion"
+                            placeholder="Descripción (Ej: Pago cuota administración julio 2026)" rows="3"
+                            style="padding:10px; border-radius:6px; border:1px solid #ccc; font-family:inherit; resize:vertical;"></textarea>
+                        <div>
+                            <label style="font-weight:500; margin-bottom:6px; display:block; font-size:14px;">Soporte
+                                del pago (opcional, JPG/PNG/PDF máx 5MB)</label>
+                            <input type="file" id="pagoSoporte" accept=".jpg,.jpeg,.png,.pdf"
+                                style="padding:8px; border-radius:6px; border:1px solid #ccc; width:100%;">
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="padding:12px;">Guardar Pago</button>
+                    </form>
+                </div>
             </div>
-            
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px;">
-                <div>
-                    <h3>Cartera Activa (Mora)</h3>
-                    <div class="card">
-                        <table class="data-table">
-                            <thead><tr><th>ID</th><th>Apto</th><th>Mora Actual</th></tr></thead>
-                            <tbody id="tb-cartera"><tr><td colspan="3">Cargando...</td></tr></tbody>
-                        </table>
-                    </div>
+
+            <div
+                style="display:grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap:24px; margin-bottom:24px;">
+                <div class="card" style="overflow-x:auto;">
+                    <h3 style="margin-bottom: 16px;"><i class="fa-solid fa-hand-holding-dollar"
+                            style="color:#d97706;"></i> Pagos por Aprobar</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Apto</th>
+                                <th>Residente</th>
+                                <th>Valor</th>
+                                <th>Ref.</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tb-pagos-pendientes">
+                            <tr>
+                                <td colspan="6">Cargando...</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
-                <div>
-                    <h3>Últimos Pagos Recibidos</h3>
-                    <div class="card">
-                        <table class="data-table">
-                            <thead><tr><th>Apto</th><th>Valor</th><th>Método</th><th>Fecha</th></tr></thead>
-                            <tbody id="tb-pagos"><tr><td colspan="4">Cargando...</td></tr></tbody>
-                        </table>
-                    </div>
+
+                <div class="card" style="overflow-x:auto;">
+                    <h3 style="margin-bottom: 16px;"><i class="fa-solid fa-circle-exclamation"
+                            style="color:#dc2626;"></i> Estado de Cartera (Mora)</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Apto</th>
+                                <th>Propietario</th>
+                                <th>Deuda Actual</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tb-cartera">
+                            <tr>
+                                <td colspan="3">Cargando...</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
+            </div>
+
+            <div class="card" style="overflow-x:auto;">
+                <h3 style="margin-bottom: 16px;"><i class="fa-solid fa-book"></i> Historial de Pagos (Contabilidad)</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Apto</th>
+                            <th>Valor</th>
+                            <th>Método</th>
+                            <th>Descripción</th>
+                            <th>Soporte</th>
+                            <th>Registrado por</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-historial-pagos">
+                        <tr>
+                            <td colspan="7">Cargando...</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </template>
@@ -411,20 +782,37 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
                 <h1 class="page-title" style="margin:0">Portería y Seguridad</h1>
                 <div>
-                    <button class="btn btn-primary" style="margin-right:8px;"><i class="fa-solid fa-person-walking-arrow-right"></i> Registrar Visita</button>
-                    <button class="btn btn-primary" style="background:#16a34a"><i class="fa-solid fa-box"></i> Recibir Paquete</button>
+                    <button class="btn btn-primary" style="margin-right:8px;" onclick="abrirModalPorteria('visita')"><i
+                            class="fa-solid fa-person-walking-arrow-right"></i> Registrar Visita</button>
+                    <button class="btn btn-primary" style="background:#16a34a; margin-right:8px;"
+                        onclick="abrirModalPorteria('paquete')"><i class="fa-solid fa-box"></i> Recibir
+                        Paquete</button>
+                    <button class="btn btn-ghost" style="width:auto; border:1px solid var(--border);"
+                        onclick="abrirModalPorteria('minuta')"><i class="fa-solid fa-clipboard"></i> Novedad</button>
                 </div>
             </div>
-            
+
             <h3>Directorio de Residentes (Citófono)</h3>
             <div class="card" style="margin-bottom: 24px;">
                 <div style="margin-bottom: 16px;">
-                    <input type="text" id="busquedaDirectorio" placeholder="🔍 Buscar por nombre, torre o apto..." style="width:100%; padding:12px; border:2px solid var(--border); border-radius:var(--radius-md); font-family:inherit; outline:none;">
+                    <input type="text" id="busquedaDirectorio" placeholder="🔍 Buscar por nombre, torre o apto..."
+                        style="width:100%; padding:12px; border:2px solid var(--border); border-radius:var(--radius-md); font-family:inherit; outline:none;">
                 </div>
                 <div style="max-height: 250px; overflow-y: auto;">
                     <table class="data-table">
-                        <thead><tr><th>Torre</th><th>Apto</th><th>Residente</th><th>Contacto</th></tr></thead>
-                        <tbody id="tb-directorio"><tr><td colspan="4">Cargando directorio...</td></tr></tbody>
+                        <thead>
+                            <tr>
+                                <th>Torre</th>
+                                <th>Apto</th>
+                                <th>Residente</th>
+                                <th>Contacto</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tb-directorio">
+                            <tr>
+                                <td colspan="4">Cargando directorio...</td>
+                            </tr>
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -432,8 +820,20 @@
             <h3>Visitas Recientes</h3>
             <div class="card" style="margin-bottom: 24px;">
                 <table class="data-table">
-                    <thead><tr><th>Visitante</th><th>Apto Destino</th><th>Placa</th><th>Ingreso</th><th>Salida</th></tr></thead>
-                    <tbody id="tb-visitantes"><tr><td colspan="5">Cargando...</td></tr></tbody>
+                    <thead>
+                        <tr>
+                            <th>Visitante</th>
+                            <th>Apto Destino</th>
+                            <th>Placa</th>
+                            <th>Ingreso</th>
+                            <th>Salida</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-visitantes">
+                        <tr>
+                            <td colspan="5">Cargando...</td>
+                        </tr>
+                    </tbody>
                 </table>
             </div>
 
@@ -442,8 +842,19 @@
                     <h3>Paquetes Pendientes</h3>
                     <div class="card">
                         <table class="data-table">
-                            <thead><tr><th>Transportadora</th><th>Apto</th><th>Fecha</th><th>Estado</th></tr></thead>
-                            <tbody id="tb-paquetes"><tr><td colspan="4">Cargando...</td></tr></tbody>
+                            <thead>
+                                <tr>
+                                    <th>Transportadora</th>
+                                    <th>Apto</th>
+                                    <th>Fecha</th>
+                                    <th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tb-paquetes">
+                                <tr>
+                                    <td colspan="4">Cargando...</td>
+                                </tr>
+                            </tbody>
                         </table>
                     </div>
                 </div>
@@ -451,8 +862,18 @@
                     <h3>Minuta (Novedades)</h3>
                     <div class="card">
                         <table class="data-table">
-                            <thead><tr><th>Fecha</th><th>Vigilante</th><th>Asunto</th></tr></thead>
-                            <tbody id="tb-minuta"><tr><td colspan="3">Cargando...</td></tr></tbody>
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Vigilante</th>
+                                    <th>Asunto</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tb-minuta">
+                                <tr>
+                                    <td colspan="3">Cargando...</td>
+                                </tr>
+                            </tbody>
                         </table>
                     </div>
                 </div>
@@ -464,37 +885,83 @@
         <div class="view">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
                 <h1 class="page-title" style="margin:0">Usuarios del Sistema</h1>
-                <button class="btn btn-primary" onclick="document.getElementById('modalUsuario').classList.remove('hidden')"><i class="fa-solid fa-plus"></i> Nuevo Usuario</button>
+                <span id="usuarios-contador" class="user-management-note">Gestiona aquí las cuentas de residentes,
+                    administración y vigilancia.</span>
+                <button class="btn btn-primary" onclick="window.openUsuarioModal()"><i class="fa-solid fa-plus"></i>
+                    Nuevo Usuario</button>
             </div>
 
-            <div id="modalUsuario" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
-                <h3>Crear / Registrar Usuario</h3>
-                <form id="formCrearUsuario" style="display:flex; flex-direction:column; gap:16px; margin-top:16px;">
-                    <div style="display:flex; gap:16px;">
-                        <input type="text" id="usrDoc" placeholder="Documento" required style="flex:1; padding:8px; border-radius:4px; border:1px solid #ccc;">
-                        <input type="text" id="usrNombre" placeholder="Nombre Completo" required style="flex:2; padding:8px; border-radius:4px; border:1px solid #ccc;">
-                    </div>
-                    <div style="display:flex; gap:16px;">
-                        <input type="email" id="usrEmail" placeholder="Correo Electrónico" required style="flex:2; padding:8px; border-radius:4px; border:1px solid #ccc;">
-                        <input type="password" id="usrPass" placeholder="Contraseña Temporal" required style="flex:1; padding:8px; border-radius:4px; border:1px solid #ccc;">
-                    </div>
-                    <select id="usrRol" style="padding:8px; border-radius:4px; border:1px solid #ccc;" required>
-                        <option value="">-- Seleccionar Rol --</option>
-                        <option value="residente">Residente / Propietario</option>
-                        <option value="vigilante">Vigilante (Portería)</option>
-                        <option value="admin">Administrador</option>
-                    </select>
-                    <div style="display:flex; gap:8px;">
-                        <button type="submit" class="btn btn-primary">Registrar Usuario</button>
-                        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalUsuario').classList.add('hidden')">Cancelar</button>
-                    </div>
-                </form>
+            <!-- Modal for User Create/Edit -->
+            <div id="modalUsuario" class="login-modal hidden" style="z-index: 1000;">
+                <div class="login-box" style="max-width: 500px; padding: 32px;">
+                    <button class="close-btn" type="button"
+                        onclick="document.getElementById('modalUsuario').classList.add('hidden')"><i
+                            class="fa-solid fa-xmark"></i></button>
+                    <h2 id="modalUsuarioTitle" style="margin-bottom: 24px;">Crear Usuario</h2>
+                    <form id="formCrearUsuario" style="display:flex; flex-direction:column; gap:16px;">
+                        <input type="hidden" id="usrId" name="id">
+
+                        <div class="form-group">
+                            <label
+                                style="font-weight: 500; font-size: 14px; margin-bottom: 4px; display: block;">Documento</label>
+                            <input type="text" id="usrDoc" placeholder="Ej. 123456789" required
+                                style="width: 100%; padding:10px; border-radius:6px; border:1px solid #ccc;">
+                        </div>
+
+                        <div class="form-group">
+                            <label style="font-weight: 500; font-size: 14px; margin-bottom: 4px; display: block;">Nombre
+                                Completo</label>
+                            <input type="text" id="usrNombre" placeholder="Ej. Juan Pérez" required
+                                style="width: 100%; padding:10px; border-radius:6px; border:1px solid #ccc;">
+                        </div>
+
+                        <div class="form-group">
+                            <label style="font-weight: 500; font-size: 14px; margin-bottom: 4px; display: block;">Correo
+                                Electrónico</label>
+                            <input type="email" id="usrEmail" placeholder="correo@ejemplo.com" required
+                                style="width: 100%; padding:10px; border-radius:6px; border:1px solid #ccc;">
+                        </div>
+
+                        <div class="form-group">
+                            <label
+                                style="font-weight: 500; font-size: 14px; margin-bottom: 4px; display: block;">Contraseña
+                                (Dejar en blanco para mantener actual)</label>
+                            <input type="password" id="usrPass" placeholder="Contraseña Segura"
+                                style="width: 100%; padding:10px; border-radius:6px; border:1px solid #ccc;">
+                        </div>
+
+                        <div class="form-group">
+                            <label style="font-weight: 500; font-size: 14px; margin-bottom: 4px; display: block;">Rol en
+                                el Sistema</label>
+                            <select id="usrRol"
+                                style="width: 100%; padding:10px; border-radius:6px; border:1px solid #ccc;" required>
+                                <option value="">-- Seleccionar Rol --</option>
+                                <option value="residente">Residente / Propietario</option>
+                                <option value="vigilante">Vigilante (Portería)</option>
+                                <option value="admin">Administrador</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary"
+                            style="width: 100%; padding: 12px; margin-top: 8px;">Guardar Usuario</button>
+                    </form>
+                </div>
             </div>
 
-            <div class="card">
+            <div class="card" style="overflow-x: auto;">
                 <table class="data-table">
-                    <thead><tr><th>Documento</th><th>Nombre</th><th>Email</th><th>Rol</th></tr></thead>
-                    <tbody id="tb-usuarios"><tr><td colspan="4">Cargando...</td></tr></tbody>
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Documento</th>
+                            <th>Rol</th>
+                            <th>Email</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="listaUsuarios">
+                        <!-- Generado por JS -->
+                    </tbody>
                 </table>
             </div>
         </div>
@@ -502,11 +969,48 @@
 
     <template id="tpl-inmuebles">
         <div class="view">
-            <h1 class="page-title">Inmuebles y Estados de Cuenta</h1>
-            <div class="card">
+            <div class="section-toolbar">
+                <div>
+                    <h1 class="page-title">Inmuebles y estados de cuenta</h1>
+                    <p class="muted">Crea y edita unidades sin eliminar su historial.</p>
+                </div><button class="btn btn-primary" onclick="abrirModalInmueble()"><i class="fa-solid fa-plus"></i>
+                    Nueva unidad</button>
+            </div>
+            <div id="modalInmueble" class="login-modal hidden">
+                <div class="login-box"><button class="close-btn" type="button" onclick="cerrarModalInmueble()"><i
+                            class="fa-solid fa-xmark"></i></button>
+                    <h2 id="inmuebleTitulo">Nueva unidad</h2>
+                    <form id="formInmueble" class="stack-form"><input id="inmuebleId" type="hidden"><select
+                            id="inmuebleTipo" required>
+                            <option value="apartamento">Apartamento</option>
+                            <option value="casa">Casa</option>
+                        </select><input id="inmuebleTorre" placeholder="Torre o bloque (opcional)"><input
+                            id="inmuebleNomenclatura" placeholder="Nomenclatura / unidad" required><input
+                            id="inmuebleParqueadero" placeholder="Parqueadero (opcional)"><input
+                            id="inmuebleCoeficiente" type="number" step="0.0001" min="0"
+                            placeholder="Coeficiente"><input id="inmuebleMora" type="number" step="0.01" min="0"
+                            placeholder="Mora inicial" value="0"><button class="btn btn-primary" type="submit">Guardar
+                            unidad</button></form>
+                </div>
+            </div>
+            <div class="card table-responsive">
                 <table class="data-table">
-                    <thead><tr><th>Torre</th><th>Apto</th><th>Mora Actual</th><th>Vehículos</th><th>Mascotas</th></tr></thead>
-                    <tbody id="tb-inmuebles"><tr><td colspan="5">Cargando...</td></tr></tbody>
+                    <thead>
+                        <tr>
+                            <th>Tipo</th>
+                            <th>Torre/bloque</th>
+                            <th>Nomenclatura</th>
+                            <th>Parqueadero</th>
+                            <th>Coeficiente</th>
+                            <th>Mora</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-inmuebles">
+                        <tr>
+                            <td colspan="7">Cargando...</td>
+                        </tr>
+                    </tbody>
                 </table>
             </div>
         </div>
@@ -514,36 +1018,113 @@
 
     <template id="tpl-zonas">
         <div class="view">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
-                <h1 class="page-title" style="margin:0">Zonas Sociales y Reservas</h1>
-                <button class="btn btn-primary" onclick="document.getElementById('modalZona').classList.remove('hidden')"><i class="fa-solid fa-plus"></i> Nueva Zona Social</button>
+            <div class="zonas-view-header">
+                <div>
+                    <h1 class="page-title">Zonas sociales y reservas</h1>
+                    <p class="zonas-view-description">Administra la información de cada zona o solicita una reserva como
+                        residente.</p>
+                </div>
+                <button id="btnNuevaZona" class="btn btn-primary" onclick="abrirFormularioZona()"><i
+                        class="fa-solid fa-plus"></i> Nueva zona</button>
             </div>
 
             <div id="modalZona" class="card hidden" style="margin-bottom:24px; border:2px solid var(--primary)">
-                <h3>Configurar Zona Social</h3>
-                <form id="formCrearZona" style="display:flex; flex-direction:column; gap:16px; margin-top:16px;">
-                    <div style="display:flex; gap:16px;">
-                        <input type="text" id="zonaNombre" placeholder="Nombre (ej. Piscina, BBQ)" required style="flex:2; padding:8px; border-radius:4px; border:1px solid #ccc;">
-                        <input type="number" id="zonaAforo" placeholder="Aforo Máximo" required style="flex:1; padding:8px; border-radius:4px; border:1px solid #ccc;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:16px;">
+                    <div>
+                        <h3 id="tituloFormularioZona">Configurar zona social</h3>
+                        <p style="color:var(--text-muted); font-size:14px; margin-top:4px;">Esta información se verá en
+                            la ficha pública de la zona.</p>
                     </div>
-                    <input type="text" id="zonaHorarios" placeholder="Horarios permitidos (ej. 8:00 AM - 10:00 PM)" required style="padding:8px; border-radius:4px; border:1px solid #ccc;">
-                    <textarea id="zonaReglamento" placeholder="Reglamento y Condiciones de Uso..." required style="padding:8px; border-radius:4px; border:1px solid #ccc; min-height:80px;"></textarea>
+                    <button type="button" class="btn btn-ghost" style="width:auto" onclick="cerrarFormularioZona()"><i
+                            class="fa-solid fa-xmark"></i></button>
+                </div>
+                <form id="formCrearZona" style="display:flex; flex-direction:column; gap:16px; margin-top:16px;">
+                    <input type="hidden" id="zonaId">
+                    <div class="zona-form-grid">
+                        <input type="text" id="zonaNombre" placeholder="Nombre (ej. Piscina, BBQ)" required>
+                        <input type="number" id="zonaAforo" placeholder="Aforo máximo" min="1" required>
+                        <input type="number" id="zonaTarifa" placeholder="Tarifa (0 si no aplica)" min="0" step="1000"
+                            required>
+                    </div>
+                    <input type="text" id="zonaHorarios" placeholder="Horarios permitidos (ej. 8:00 AM - 10:00 PM)"
+                        required>
+                    <textarea id="zonaDescripcion"
+                        placeholder="Descripción de la zona, sus características y qué incluye…" required
+                        rows="3"></textarea>
+                    <textarea id="zonaReglamento" placeholder="Normas y condiciones de uso…" required
+                        rows="4"></textarea>
+                    <input id="zonaImagen" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                        aria-label="Imagen de zona JPG, PNG o WEBP máximo 5MB">
+                    <input id="zonaYoutube" type="url" placeholder="Video de YouTube opcional (https://youtu.be/…)">
                     <div style="display:flex; gap:8px;">
-                        <button type="submit" class="btn btn-primary">Crear Zona</button>
-                        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalZona').classList.add('hidden')">Cancelar</button>
+                        <button id="btnGuardarZona" type="submit" class="btn btn-primary">Guardar zona</button>
+                        <button type="button" class="btn btn-ghost" style="width:auto"
+                            onclick="cerrarFormularioZona()">Cancelar</button>
                     </div>
                 </form>
             </div>
 
-            <div class="card" style="margin-bottom: 24px;">
-                <div id="calendar"></div>
+            <div id="panelReservarZona" class="card reserva-solicitud-card">
+                <div>
+                    <h3>Solicitar una reserva</h3>
+                    <p>Elige la zona y fecha. La administración confirmará tu solicitud.</p>
+                </div>
+                <form id="formReservarZona" class="reserva-solicitud-form">
+                    <select id="reservaZonaId" required>
+                        <option value="">Selecciona una zona…</option>
+                    </select>
+                    <input id="reservaFecha" type="date" required>
+                    <button type="submit" class="btn btn-primary">Solicitar reserva</button>
+                </form>
             </div>
 
-            <div class="card">
-                <h3>Listado de Reservas (Detalle)</h3>
+            <section id="panelGestionZonas" class="card" style="margin:24px 0; overflow-x:auto;">
+                <div class="zonas-section-heading">
+                    <div>
+                        <h3>Zonas configuradas</h3>
+                        <p>Consulta o edita la información visible en el home.</p>
+                    </div>
+                </div>
                 <table class="data-table mt-4">
-                    <thead><tr><th>Zona</th><th>Residente</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr></thead>
-                    <tbody id="tb-zonas"><tr><td colspan="5">Cargando...</td></tr></tbody>
+                    <thead>
+                        <tr>
+                            <th>Zona</th>
+                            <th>Aforo</th>
+                            <th>Horario</th>
+                            <th>Tarifa</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-zonas-config">
+                        <tr>
+                            <td colspan="5">Cargando zonas…</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <div class="card" style="margin-bottom: 24px;">
+                <h3>Calendario de mis reservas</h3>
+                <div id="calendar" style="margin-top:16px;"></div>
+            </div>
+
+            <div class="card" style="overflow-x:auto;">
+                <h3>Listado de reservas</h3>
+                <table class="data-table mt-4">
+                    <thead>
+                        <tr>
+                            <th>Zona</th>
+                            <th>Residente</th>
+                            <th>Fecha</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-zonas">
+                        <tr>
+                            <td colspan="5">Cargando…</td>
+                        </tr>
+                    </tbody>
                 </table>
             </div>
         </div>
@@ -553,14 +1134,43 @@
         <div class="view">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
                 <h1 class="page-title" style="margin:0">PQRS (Reclamaciones)</h1>
-                <button class="btn btn-primary"><i class="fa-solid fa-plus"></i> Radicar Queja</button>
+                <button class="btn btn-primary" onclick="abrirFormularioPQRS()"><i class="fa-solid fa-plus"></i> Radicar
+                    Queja</button>
             </div>
             <div class="card">
                 <table class="data-table">
-                    <thead><tr><th>Asunto</th><th>Usuario</th><th>Fecha</th><th>Estado</th></tr></thead>
-                    <tbody id="tb-reclamaciones"><tr><td colspan="4">Cargando...</td></tr></tbody>
+                    <thead>
+                        <tr>
+                            <th>Asunto</th>
+                            <th>Usuario</th>
+                            <th>Fecha</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-reclamaciones">
+                        <tr>
+                            <td colspan="4">Cargando...</td>
+                        </tr>
+                    </tbody>
                 </table>
             </div>
+        </div>
+    </template>
+
+    <template id="tpl-perfil">
+        <div class="view">
+            <h1 class="page-title">Seguridad de mi cuenta</h1>
+            <section class="card profile-card">
+                <h3>Cambiar contraseña</h3>
+                <p class="muted">Usa una nueva contraseña de al menos 8 caracteres.</p>
+                <form id="formCambiarPassword" class="stack-form"><input id="passwordActual" type="password"
+                        autocomplete="current-password" placeholder="Contraseña actual" required><input
+                        id="passwordNueva" type="password" autocomplete="new-password"
+                        placeholder="Nueva contraseña (mínimo 8 caracteres)" minlength="8" required><input
+                        id="passwordConfirmacion" type="password" autocomplete="new-password"
+                        placeholder="Confirmar nueva contraseña" minlength="8" required><button class="btn btn-primary"
+                        type="submit">Actualizar contraseña</button></form>
+            </section>
         </div>
     </template>
 
@@ -568,14 +1178,16 @@
         <div class="view import-view">
             <h1 class="page-title">Importar Base de Datos</h1>
             <div class="card">
-                <p>Sube tu archivo Excel para cargar residentes o propietarios de forma masiva. El sistema leerá las columnas para que puedas mapearlas correctamente.</p>
-                
+                <p>Sube tu archivo Excel para cargar residentes o propietarios de forma masiva. El sistema leerá las
+                    columnas para que puedas mapearlas correctamente.</p>
+
                 <div class="upload-zone" id="uploadZone">
                     <i class="fa-solid fa-cloud-arrow-up"></i>
                     <h3>Arrastra tu archivo Excel aquí</h3>
                     <p>o</p>
                     <input type="file" id="excelFile" accept=".xlsx, .xls" hidden>
-                    <button class="btn btn-primary" onclick="document.getElementById('excelFile').click()">Seleccionar Archivo</button>
+                    <button class="btn btn-primary" onclick="document.getElementById('excelFile').click()">Seleccionar
+                        Archivo</button>
                 </div>
 
                 <div id="mappingSection" class="hidden">
@@ -593,6 +1205,8 @@
         </div>
     </template>
 
-    <script src="js/app.js"></script>
+    <!-- Script Principal -->
+    <script src="js/app.js?v=20260803"></script>
 </body>
+
 </html>

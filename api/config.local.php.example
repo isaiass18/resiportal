@@ -1,0 +1,7 @@
+<?php
+// Copia este archivo como config.local.php (NO se sube a git) y completa tus
+// credenciales de base de datos para desarrollo local.
+$dbHost = 'localhost';
+$dbUser = 'resi_admin';
+$dbPass = 'CAMBIA_ESTA_CONTRASENA';
+$dbName = 'conjunto_residencial';
