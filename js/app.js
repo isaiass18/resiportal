@@ -3796,3 +3796,14 @@ loadReclamaciones = async function () {
     if (result.status !== 'success') return window.notificar(result.message || 'No fue posible cargar PQRS.', 'error');
     tabla.innerHTML = result.data.length ? result.data.map(item => `<tr><td><strong>${escapeHtml(item.asunto)}</strong><br><small>${escapeHtml(item.categoria || 'General')}</small></td><td>${escapeHtml(item.usuario_nombre || 'Tú')}</td><td>${escapeHtml(item.creado_en)}</td><td><span class="reserva-estado">${escapeHtml(item.estado)}</span></td><td>${botonesAdjuntosReclamacion(item.adjuntos || [])}</td></tr>`).join('') : '<tr><td colspan="5">No hay PQRS radicadas.</td></tr>';
 };
+
+
+function abrirConfiguracionCuotasAdministracion() {
+    const panel = document.getElementById('panel-cuotas-configuradas');
+    if (!panel) {
+        window.notificar('La configuración de cuotas todavía está cargando. Intenta de nuevo en un momento.', 'info');
+        return;
+    }
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.setTimeout(() => panel.querySelector('#cuotaBusqueda')?.focus(), 350);
+}
