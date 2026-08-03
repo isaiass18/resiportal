@@ -20,4 +20,19 @@ elseif ($action === 'list_paquetes') {
     $stmt = $pdo->query("SELECT p.*, i.apartamento, u.nombre as receptor FROM paquetes p LEFT JOIN inmuebles i ON p.inmueble_id = i.id LEFT JOIN usuarios u ON p.recibido_por = u.id ORDER BY p.fecha_recepcion DESC LIMIT 50");
     responseJSON('success', '', $stmt->fetchAll());
 }
+elseif ($action === 'list_directorio') {
+    // For MVP, return users with 'residente' role and their mock apartments if relationships exist.
+    // If we haven't linked them properly in the DB yet, we just return the users list.
+    $stmt = $pdo->query("
+        SELECT u.id, u.nombre, u.email, 
+               COALESCE(i.torre, 'N/A') as torre, 
+               COALESCE(i.apartamento, 'N/A') as apartamento 
+        FROM usuarios u 
+        LEFT JOIN relacion_inmuebles_usuarios r ON u.id = r.usuario_id 
+        LEFT JOIN inmuebles i ON r.inmueble_id = i.id 
+        WHERE u.rol = 'residente' 
+        ORDER BY i.apartamento ASC, u.nombre ASC
+    ");
+    responseJSON('success', '', $stmt->fetchAll());
+}
 ?>

@@ -6,20 +6,49 @@
     <title>Portal de Administración - Premium</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <!-- Login Screen -->
-    <div id="login-screen" class="login-overlay">
-        <div class="login-box">
-            <h2>ResiPortal</h2>
-            <p>Inicia sesión para continuar</p>
-            <form id="loginForm">
-                <input type="email" id="loginEmail" placeholder="Correo electrónico" required>
-                <input type="password" id="loginPassword" placeholder="Contraseña" required>
-                <button type="submit" class="btn btn-primary" style="width: 100%">Entrar</button>
-                <div id="loginError" class="login-error"></div>
-            </form>
+    <!-- Premium Landing Page -->
+    <div id="landing-screen" class="landing-overlay">
+        <div class="landing-content">
+            <h1 class="landing-title">Bienvenido a <span>ResiPortal</span></h1>
+            <p class="landing-subtitle">Selecciona tu portal de acceso para continuar</p>
+            
+            <div class="portal-cards">
+                <div class="portal-card" onclick="openLoginModal('residente')">
+                    <i class="fa-solid fa-house-user"></i>
+                    <h3>Portal Residentes</h3>
+                    <p>Estados de cuenta, reservas y cartelera</p>
+                </div>
+                <div class="portal-card" onclick="openLoginModal('vigilante')">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <h3>Portal Seguridad</h3>
+                    <p>Control de acceso, minuta y paquetes</p>
+                </div>
+                <div class="portal-card" onclick="openLoginModal('admin')">
+                    <i class="fa-solid fa-briefcase"></i>
+                    <h3>Portal Administración</h3>
+                    <p>Gestión integral, métricas y finanzas</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Login Modal (Hidden by default) -->
+        <div id="login-modal" class="login-modal hidden">
+            <div class="login-box">
+                <button class="close-btn" onclick="closeLoginModal()"><i class="fa-solid fa-xmark"></i></button>
+                <h2 id="login-title">Iniciar Sesión</h2>
+                <p>Ingresa tus credenciales</p>
+                <form id="loginForm">
+                    <input type="email" id="loginEmail" placeholder="Correo electrónico" required>
+                    <input type="password" id="loginPassword" placeholder="Contraseña" required>
+                    <button type="submit" class="btn btn-primary" style="width: 100%">Entrar al Portal</button>
+                    <div id="loginError" class="login-error"></div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -110,6 +139,16 @@
                         <h3>Visitas Hoy</h3>
                         <p class="stat-number">18</p>
                     </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
+                <div class="card">
+                    <h3>Estado de Cartera</h3>
+                    <canvas id="chartCartera" style="max-height: 300px;"></canvas>
+                </div>
+                <div class="card">
+                    <h3>Reservas por Zona Social</h3>
+                    <canvas id="chartReservas" style="max-height: 300px;"></canvas>
                 </div>
             </div>
         </div>
@@ -285,6 +324,19 @@
                 </div>
             </div>
             
+            <h3>Directorio de Residentes (Citófono)</h3>
+            <div class="card" style="margin-bottom: 24px;">
+                <div style="margin-bottom: 16px;">
+                    <input type="text" id="busquedaDirectorio" placeholder="🔍 Buscar por nombre, torre o apto..." style="width:100%; padding:12px; border:2px solid var(--border); border-radius:var(--radius-md); font-family:inherit; outline:none;">
+                </div>
+                <div style="max-height: 250px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead><tr><th>Torre</th><th>Apto</th><th>Residente</th><th>Contacto</th></tr></thead>
+                        <tbody id="tb-directorio"><tr><td colspan="4">Cargando directorio...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
             <h3>Visitas Recientes</h3>
             <div class="card" style="margin-bottom: 24px;">
                 <table class="data-table">
@@ -391,8 +443,12 @@
                 </form>
             </div>
 
+            <div class="card" style="margin-bottom: 24px;">
+                <div id="calendar"></div>
+            </div>
+
             <div class="card">
-                <h3>Listado de Reservas</h3>
+                <h3>Listado de Reservas (Detalle)</h3>
                 <table class="data-table mt-4">
                     <thead><tr><th>Zona</th><th>Residente</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr></thead>
                     <tbody id="tb-zonas"><tr><td colspan="5">Cargando...</td></tr></tbody>

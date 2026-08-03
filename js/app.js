@@ -11,17 +11,27 @@ async function checkAuth() {
         
         if (data.status === 'success') {
             currentUser = data.data;
-            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('landing-screen').classList.add('hidden');
+            document.getElementById('login-modal').classList.add('hidden');
             document.getElementById('app').classList.remove('hidden');
             document.getElementById('topbarName').innerText = currentUser.nombre;
             initApp();
         } else {
-            document.getElementById('login-screen').classList.remove('hidden');
+            document.getElementById('landing-screen').classList.remove('hidden');
             document.getElementById('app').classList.add('hidden');
         }
     } catch (e) {
         console.error(e);
     }
+}
+
+window.openLoginModal = function(role) {
+    document.getElementById('login-modal').classList.remove('hidden');
+    // We could pre-fill the role in the UI if needed, but for now just show modal.
+}
+
+window.closeLoginModal = function() {
+    document.getElementById('login-modal').classList.add('hidden');
 }
 
 document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
@@ -110,6 +120,7 @@ function loadView(viewName) {
     
     if (template) {
         container.innerHTML = template.innerHTML;
+        if (viewName === 'dashboard') loadDashboard();
         if (viewName === 'importar') initImportView();
         if (viewName === 'usuarios') loadUsuarios();
         if (viewName === 'inmuebles') loadInmuebles();
@@ -161,6 +172,59 @@ async function loadHomeResidente() {
         document.getElementById('residente-mora').innerText = `$${data.data.mora_actual}`;
     } else {
         document.getElementById('residente-mora').innerText = `$0.00`;
+    }
+}
+
+async function loadDashboard() {
+    // In a real app, we would fetch aggregate data from an API endpoint here.
+    // For this premium MVP demo, we will render visually appealing realistic data.
+    
+    // Gráfico de Cartera (Pie Chart)
+    const ctxCartera = document.getElementById('chartCartera');
+    if (ctxCartera && window.Chart) {
+        // Clear previous instance if exists to avoid hover glitches
+        if(window.chartCarteraInstance) window.chartCarteraInstance.destroy();
+        window.chartCarteraInstance = new Chart(ctxCartera, {
+            type: 'doughnut',
+            data: {
+                labels: ['Al Día', 'Mora < 30 días', 'Mora > 30 días'],
+                datasets: [{
+                    data: [85, 10, 5],
+                    backgroundColor: ['#16a34a', '#ca8a04', '#dc2626'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom' }
+                }
+            }
+        });
+    }
+
+    // Gráfico de Reservas (Bar Chart)
+    const ctxReservas = document.getElementById('chartReservas');
+    if (ctxReservas && window.Chart) {
+        if(window.chartReservasInstance) window.chartReservasInstance.destroy();
+        window.chartReservasInstance = new Chart(ctxReservas, {
+            type: 'bar',
+            data: {
+                labels: ['Piscina', 'BBQ', 'Salón Comunal', 'Cancha'],
+                datasets: [{
+                    label: 'Reservas este mes',
+                    data: [45, 30, 15, 25],
+                    backgroundColor: '#4f46e5',
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
     }
 }
 
@@ -297,31 +361,69 @@ async function loadFinanzas() {
 }
 
 async function loadPorteria() {
-    // Cargar Visitantes
-    const resV = await fetch('api/porteria.php?action=list_visitantes');
-    const dataV = await resV.json();
-    if(dataV.status === 'success') {
-        const tb = document.getElementById('tb-visitantes');
-        tb.innerHTML = dataV.data.length === 0 ? '<tr><td colspan="5">No hay visitas recientes</td></tr>' :
-            dataV.data.map(v => `<tr><td>${v.nombre}</td><td>${v.apartamento || 'N/A'}</td><td>${v.vehiculo_placa || 'Ninguna'}</td><td>${v.fecha_ingreso}</td><td>${v.fecha_salida || '<span style="color:#16a34a">Adentro</span>'}</td></tr>`).join('');
-    }
+    try {
+        const [resVis, resMin, resPaq, resDir] = await Promise.all([
+            fetch('api/porteria.php?action=list_visitantes'),
+            fetch('api/porteria.php?action=list_minuta'),
+            fetch('api/porteria.php?action=list_paquetes'),
+            fetch('api/porteria.php?action=list_directorio')
+        ]);
+        const dataV = await resVis.json();
+        const dataM = await resMin.json();
+        const dataP = await resPaq.json();
+        const dataDir = await resDir.json();
 
-    // Cargar Paquetes
-    const resP = await fetch('api/porteria.php?action=list_paquetes');
-    const dataP = await resP.json();
-    if(dataP.status === 'success') {
-        const tb = document.getElementById('tb-paquetes');
-        tb.innerHTML = dataP.data.length === 0 ? '<tr><td colspan="4">No hay paquetes pendientes</td></tr>' :
-            dataP.data.map(p => `<tr><td>${p.transportadora}</td><td>${p.apartamento || 'N/A'}</td><td>${p.fecha_recepcion}</td><td>${p.estado}</td></tr>`).join('');
-    }
+        // Directorio
+        const tbDir = document.getElementById('tb-directorio');
+        const inputDir = document.getElementById('busquedaDirectorio');
+        if (dataDir.status === 'success' && tbDir && inputDir) {
+            const renderDir = (filterText) => {
+                const text = filterText.toLowerCase();
+                const filtered = dataDir.data.filter(u => 
+                    (u.nombre || '').toLowerCase().includes(text) || 
+                    (u.torre || '').toLowerCase().includes(text) || 
+                    (u.apartamento || '').toLowerCase().includes(text)
+                );
+                if (filtered.length === 0) {
+                    tbDir.innerHTML = `<tr><td colspan="4">No se encontraron residentes</td></tr>`;
+                } else {
+                    tbDir.innerHTML = filtered.map(u => `<tr>
+                        <td><strong>${u.torre}</strong></td>
+                        <td><strong>${u.apartamento}</strong></td>
+                        <td>${u.nombre}</td>
+                        <td><a href="mailto:${u.email}">${u.email}</a></td>
+                    </tr>`).join('');
+                }
+            };
+            
+            renderDir('');
+            inputDir.addEventListener('input', (e) => {
+                renderDir(e.target.value);
+            });
+        }
 
-    // Cargar Minuta
-    const resM = await fetch('api/porteria.php?action=list_minuta');
-    const dataM = await resM.json();
-    if(dataM.status === 'success') {
-        const tb = document.getElementById('tb-minuta');
-        tb.innerHTML = dataM.data.length === 0 ? '<tr><td colspan="3">Minuta vacía</td></tr>' :
-            dataM.data.map(m => `<tr><td>${m.fecha_registro}</td><td>${m.vigilante}</td><td>${m.asunto}</td></tr>`).join('');
+        // Visitantes
+        if(dataV.status === 'success') {
+            const tb = document.getElementById('tb-visitantes');
+            tb.innerHTML = dataV.data.length === 0 ? '<tr><td colspan="5">No hay visitas recientes</td></tr>' :
+                dataV.data.map(v => `<tr><td>${v.nombre}</td><td>${v.apartamento || 'N/A'}</td><td>${v.vehiculo_placa || 'Ninguna'}</td><td>${v.fecha_ingreso}</td><td>${v.fecha_salida || '<span style="color:#16a34a">Adentro</span>'}</td></tr>`).join('');
+        }
+
+        // Paquetes
+        if(dataP.status === 'success') {
+            const tb = document.getElementById('tb-paquetes');
+            tb.innerHTML = dataP.data.length === 0 ? '<tr><td colspan="4">No hay paquetes pendientes</td></tr>' :
+                dataP.data.map(p => `<tr><td>${p.transportadora}</td><td>${p.apartamento || 'N/A'}</td><td>${p.fecha_recepcion}</td><td>${p.estado}</td></tr>`).join('');
+        }
+
+        // Minuta
+        if(dataM.status === 'success') {
+            const tb = document.getElementById('tb-minuta');
+            tb.innerHTML = dataM.data.length === 0 ? '<tr><td colspan="3">Minuta vacía</td></tr>' :
+                dataM.data.map(m => `<tr><td>${m.fecha_registro}</td><td>${m.vigilante}</td><td>${m.asunto}</td></tr>`).join('');
+        }
+    } catch (e) {
+        console.error(e);
     }
 }
 
@@ -386,6 +488,27 @@ async function loadZonas() {
                 
                 return `<tr><td>${z.zona_nombre}</td><td>${z.usuario_nombre || 'Tú'}</td><td>${z.fecha_reserva}</td><td>${z.estado}</td><td>${acciones}</td></tr>`;
             }).join('');
+        }
+
+        // Init Calendar
+        const calEl = document.getElementById('calendar');
+        if (calEl && window.FullCalendar) {
+            const events = data.data.map(r => ({
+                title: `${r.zona_nombre} - ${r.usuario_nombre || 'Tú'} (${r.estado})`,
+                start: r.fecha_reserva.split(' ')[0],
+                color: r.estado === 'Aprobada' ? '#16a34a' : (r.estado === 'Pendiente' ? '#ca8a04' : '#dc2626')
+            }));
+            const calendar = new FullCalendar.Calendar(calEl, {
+                initialView: 'dayGridMonth',
+                locale: 'es',
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,timeGridWeek'
+                },
+                events: events
+            });
+            calendar.render();
         }
     }
 
