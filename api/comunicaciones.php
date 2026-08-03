@@ -3,9 +3,18 @@ session_start();
 require_once 'config.php';
 header('Content-Type: application/json');
 
+$action = $_POST['action'] ?? $_GET['action'] ?? '';
+
+// Public endpoints
+if ($action === 'public_cartelera') {
+    $stmt = $pdo->query("SELECT c.*, u.nombre as autor FROM comunicados c JOIN usuarios u ON c.autor_id = u.id ORDER BY c.fecha_publicacion DESC LIMIT 10");
+    responseJSON('success', '', $stmt->fetchAll());
+    exit;
+}
+
+// Protected endpoints
 if (!isset($_SESSION['user_id'])) responseJSON('error', 'No autorizado');
 
-$action = $_POST['action'] ?? $_GET['action'] ?? '';
 $user_id = $_SESSION['user_id'];
 $rol = $_SESSION['user_rol'];
 

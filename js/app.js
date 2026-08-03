@@ -19,9 +19,32 @@ async function checkAuth() {
         } else {
             document.getElementById('landing-screen').classList.remove('hidden');
             document.getElementById('app').classList.add('hidden');
+            loadPublicCartelera();
         }
     } catch (e) {
         console.error(e);
+    }
+}
+
+async function loadPublicCartelera() {
+    try {
+        const res = await fetch('api/comunicaciones.php?action=public_cartelera');
+        const data = await res.json();
+        if (data.status === 'success') {
+            const div = document.getElementById('public-cartelera-list');
+            if (div) {
+                div.innerHTML = data.data.length === 0 ? '<p>No hay comunicados públicos recientes.</p>' :
+                    data.data.map(c => `
+                        <div style="background:#fff; border-left: 4px solid var(--primary); padding: 24px; border-radius: var(--radius-md); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                            <h3 style="margin:0; font-size:20px;">${c.titulo}</h3>
+                            <p style="margin:8px 0; font-size:16px; color:#555;">${c.contenido}</p>
+                            <small style="color:#888;">Publicado el ${c.fecha_publicacion} por ${c.autor}</small>
+                        </div>
+                    `).join('');
+            }
+        }
+    } catch (e) {
+        console.error('Error loading public cartelera', e);
     }
 }
 

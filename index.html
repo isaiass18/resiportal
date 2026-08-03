@@ -11,30 +11,60 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <!-- Premium Landing Page -->
+    <!-- Website Público / Home Page -->
     <div id="landing-screen" class="landing-overlay">
-        <div class="landing-content">
-            <h1 class="landing-title">Bienvenido a <span>ResiPortal</span></h1>
-            <p class="landing-subtitle">Selecciona tu portal de acceso para continuar</p>
-            
-            <div class="portal-cards">
-                <div class="portal-card" onclick="openLoginModal('residente')">
-                    <i class="fa-solid fa-house-user"></i>
-                    <h3>Portal Residentes</h3>
-                    <p>Estados de cuenta, reservas y cartelera</p>
+        <!-- Navbar Público -->
+        <nav class="public-nav">
+            <div class="logo">🏢 <span>ResiPortal</span></div>
+            <div class="nav-links">
+                <button class="btn btn-primary" onclick="document.getElementById('portal-selection').classList.remove('hidden'); window.scrollTo({top:0, behavior:'smooth'});">Ingresar a Portales</button>
+            </div>
+        </nav>
+
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <div class="hero-content">
+                <h1>Tu Conjunto Residencial, <span>Más Conectado</span></h1>
+                <p>Bienvenido al portal oficial. Mantente informado, reserva zonas sociales y gestiona tus pagos desde un solo lugar.</p>
+            </div>
+        </section>
+
+        <!-- Selección de Portales (Oculto por defecto o flotante) -->
+        <section id="portal-selection" class="portal-selection-section hidden">
+            <div class="landing-content">
+                <h2 class="landing-title" style="font-size:32px;">Selecciona tu <span>Portal</span></h2>
+                <div class="portal-cards mt-4">
+                    <div class="portal-card" onclick="openLoginModal('residente')">
+                        <i class="fa-solid fa-house-user"></i>
+                        <h3>Portal Residentes</h3>
+                        <p>Estados de cuenta, reservas y cartelera</p>
+                    </div>
+                    <div class="portal-card" onclick="openLoginModal('vigilante')">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        <h3>Portal Seguridad</h3>
+                        <p>Control de acceso, minuta y paquetes</p>
+                    </div>
+                    <div class="portal-card" onclick="openLoginModal('admin')">
+                        <i class="fa-solid fa-briefcase"></i>
+                        <h3>Portal Administración</h3>
+                        <p>Gestión integral, métricas y finanzas</p>
+                    </div>
                 </div>
-                <div class="portal-card" onclick="openLoginModal('vigilante')">
-                    <i class="fa-solid fa-shield-halved"></i>
-                    <h3>Portal Seguridad</h3>
-                    <p>Control de acceso, minuta y paquetes</p>
-                </div>
-                <div class="portal-card" onclick="openLoginModal('admin')">
-                    <i class="fa-solid fa-briefcase"></i>
-                    <h3>Portal Administración</h3>
-                    <p>Gestión integral, métricas y finanzas</p>
+                <button class="btn btn-ghost mt-4" onclick="document.getElementById('portal-selection').classList.add('hidden')">Ocultar</button>
+            </div>
+        </section>
+
+        <!-- Cartelera Pública -->
+        <section class="public-cartelera-section">
+            <div class="public-container">
+                <h2>Cartelera Pública</h2>
+                <p style="color:var(--text-muted); margin-bottom:32px;">Últimos comunicados y noticias del conjunto residencial.</p>
+                <div id="public-cartelera-list" style="display:flex; flex-direction:column; gap:24px;">
+                    <!-- Los comunicados se cargarán aquí por JS -->
+                    Cargando comunicados...
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- Login Modal (Hidden by default) -->
         <div id="login-modal" class="login-modal hidden">
