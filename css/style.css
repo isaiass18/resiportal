@@ -4608,3 +4608,408 @@ hr {
         padding: 10px;
     }
 }
+
+
+/* Centro de notificaciones y consignas de vigilancia. */
+.notifications {
+    position: relative;
+    display: grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: 10px;
+    color: var(--text-main);
+    cursor: pointer;
+}
+
+.notifications:hover,
+.notifications:focus-visible {
+    background: var(--primary-light);
+    color: var(--primary);
+    outline: none;
+}
+
+.notifications .badge {
+    display: none;
+    position: absolute;
+    top: -4px;
+    right: -5px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border: 2px solid #fff;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 14px;
+    text-align: center;
+}
+
+.notifications .badge.is-visible {
+    display: block;
+}
+
+.notification-center {
+    position: fixed;
+    z-index: 16000;
+    top: 70px;
+    right: 22px;
+    width: min(430px, calc(100vw - 28px));
+    max-height: min(640px, calc(100vh - 95px));
+    overflow: hidden auto;
+    border: 1px solid #dbe3ef;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, .24);
+}
+
+.notification-center.hidden {
+    display: none;
+}
+
+.notification-center header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.notification-center header h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.notification-list {
+    display: grid;
+}
+
+.notification-item {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 10px;
+    padding: 14px 16px;
+    border: 0;
+    border-bottom: 1px solid #edf2f7;
+    background: #fff;
+    color: inherit;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+}
+
+.notification-item:hover {
+    background: #f8fafc;
+}
+
+.notification-item.is-unread {
+    background: #eff6ff;
+}
+
+.notification-item .notification-icon {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border-radius: 9px;
+    background: #dbeafe;
+    color: #2563eb;
+}
+
+.notification-item strong,
+.notification-item small {
+    display: block;
+}
+
+.notification-item small {
+    margin-top: 4px;
+    color: var(--text-muted);
+    line-height: 1.35;
+}
+
+.notification-item time {
+    display: block;
+    margin-top: 5px;
+    color: #64748b;
+    font-size: 11px;
+}
+
+.notification-empty {
+    padding: 34px 20px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.consignas-layout {
+    display: grid;
+    gap: 20px;
+}
+
+.consigna-card {
+    padding: 16px;
+    border: 1px solid #dbe3ef;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.consigna-card.is-pending {
+    border-left: 4px solid #f59e0b;
+    background: #fffbeb;
+}
+
+.consigna-card header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.consigna-card h3,
+.consigna-card p {
+    margin: 0;
+}
+
+.consigna-card p {
+    margin-top: 10px;
+    color: #334155;
+    white-space: pre-wrap;
+}
+
+.consigna-meta {
+    margin-top: 12px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.consigna-form {
+    display: grid;
+    gap: 13px;
+}
+
+.consigna-form label {
+    display: grid;
+    gap: 6px;
+    font-weight: 700;
+}
+
+.consigna-form input,
+.consigna-form select,
+.consigna-form textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+}
+
+.consigna-form textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.consigna-form .consigna-destination-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.porteria-consignas {
+    margin-bottom: 24px;
+}
+
+@media (max-width: 640px) {
+    .notification-center {
+        top: 60px;
+        right: 14px;
+    }
+
+    .consigna-form .consigna-destination-fields {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+/* Insignias de actividad pendiente en el menú. */
+.nav-links li[data-view] {
+    position: relative;
+}
+
+.nav-notification-badge {
+    display: none;
+    min-width: 19px;
+    height: 19px;
+    margin-left: auto;
+    padding: 0 5px;
+    border: 2px solid var(--bg-card);
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 15px;
+    text-align: center;
+}
+
+.nav-notification-badge.is-visible {
+    display: inline-block;
+}
+
+.nav-links li.active .nav-notification-badge {
+    border-color: var(--primary);
+}
+
+.nav-submenu-items .nav-notification-badge {
+    margin-left: 6px;
+}
+
+
+/* Inventario de espacios físicos: carro, moto y bodega. */
+.space-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+}
+
+.space-summary-grid article {
+    display: grid;
+    grid-template-columns: 42px 1fr;
+    column-gap: 12px;
+    align-items: center;
+    padding: 16px;
+    border: 1px solid #dbe3ef;
+    border-radius: 14px;
+    background: linear-gradient(145deg, #fff, #f8fafc);
+}
+
+.space-summary-grid i {
+    grid-row: span 3;
+    display: grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: 12px;
+    background: #e0e7ff;
+    color: #4338ca;
+}
+
+.space-summary-grid span,
+.space-summary-grid small {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.space-summary-grid strong {
+    font-size: 24px;
+    line-height: 1.1;
+}
+
+.space-catalog-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 16px;
+}
+
+.space-catalog-header h3,
+.space-catalog-header p {
+    margin: 0;
+}
+
+.space-catalog-header p {
+    margin-top: 4px;
+    font-size: 13px;
+}
+
+.space-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.space-filters select {
+    min-width: 160px;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    background: #fff;
+    font: inherit;
+}
+
+.space-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.mis-espacios-card {
+    margin-bottom: 24px;
+    border: 1px solid #bfdbfe;
+    background: linear-gradient(145deg, #f8fbff, #fff);
+}
+
+.mis-espacios-card h3 {
+    margin: 0;
+}
+
+.mis-espacios-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 12px;
+}
+
+.mis-espacios-list article {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px;
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.mis-espacios-list article>i {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    place-items: center;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: #2563eb;
+}
+
+.mis-espacios-list strong,
+.mis-espacios-list small {
+    display: block;
+}
+
+.mis-espacios-list small {
+    margin-top: 3px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+@media (max-width: 800px) {
+    .space-summary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .space-catalog-header {
+        flex-direction: column;
+    }
+
+    .space-filters {
+        width: 100%;
+    }
+
+    .space-filters select {
+        flex: 1;
+    }
+}

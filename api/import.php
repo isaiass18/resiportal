@@ -18,7 +18,7 @@ function configuracionImportacion(string $tipo): ?array
         'residentes' => ['etiqueta' => 'residentes', 'relacion' => 'residente', 'requeridos' => ['documento', 'nombre'], 'campos' => ['documento', 'nombre', 'email', 'contacto', 'inmueble_nomenclatura']],
         'propietarios' => ['etiqueta' => 'propietarios', 'relacion' => 'propietario', 'requeridos' => ['documento', 'nombre'], 'campos' => ['documento', 'nombre', 'email', 'contacto', 'inmueble_nomenclatura']],
         'inmuebles' => ['etiqueta' => 'inmuebles', 'requeridos' => ['nomenclatura'], 'campos' => ['nomenclatura', 'tipo_unidad', 'torre', 'apartamento', 'coeficiente', 'cuota_administracion', 'mora_actual']],
-        'parqueaderos' => ['etiqueta' => 'parqueaderos', 'requeridos' => ['codigo'], 'campos' => ['codigo', 'tipo', 'estado', 'observaciones', 'inmueble_nomenclatura']],
+        'parqueaderos' => ['etiqueta' => 'espacios', 'requeridos' => ['codigo'], 'campos' => ['codigo', 'tipo', 'clase_espacio', 'sotano', 'ubicacion', 'estado', 'observaciones', 'inmueble_nomenclatura']],
     ];
     return $configuraciones[$tipo] ?? null;
 }
@@ -121,11 +121,19 @@ function prepararFilas(string $tipo, array $mapeo): array
         }
         if ($tipo === 'parqueaderos') {
             if ($datos['tipo'] !== '' && !in_array(strtolower($datos['tipo']), ['privado', 'administracion', 'visitante', 'otro'], true)) {
-                $errores[] = ['fila' => $posicion + 2, 'mensaje' => 'Tipo de parqueadero inválido'];
+                $errores[] = ['fila' => $posicion + 2, 'mensaje' => 'Tipo administrativo de espacio inválido'];
+                continue;
+            }
+            if ($datos['clase_espacio'] !== '' && !in_array(strtolower($datos['clase_espacio']), ['carro', 'moto', 'bodega'], true)) {
+                $errores[] = ['fila' => $posicion + 2, 'mensaje' => 'clase_espacio debe ser carro, moto o bodega'];
                 continue;
             }
             if ($datos['estado'] !== '' && !in_array(strtolower($datos['estado']), ['disponible', 'asignado', 'inactivo'], true)) {
-                $errores[] = ['fila' => $posicion + 2, 'mensaje' => 'Estado de parqueadero inválido'];
+                $errores[] = ['fila' => $posicion + 2, 'mensaje' => 'Estado de espacio inválido'];
+                continue;
+            }
+            if (mb_strlen($datos['sotano']) > 50 || mb_strlen($datos['ubicacion']) > 100) {
+                $errores[] = ['fila' => $posicion + 2, 'mensaje' => 'Sótano o ubicación exceden la longitud permitida'];
                 continue;
             }
         }
@@ -187,10 +195,11 @@ function importarParqueadero(PDO $pdo, int $conjuntoId, int $usuarioId, array $f
     $buscar->execute([$conjuntoId, $fila['codigo']]);
     $parqueaderoId = (int) $buscar->fetchColumn();
     $tipo = strtolower($fila['tipo'] ?: 'administracion');
+    $clase = strtolower($fila['clase_espacio'] ?: 'carro');
     $estado = strtolower($fila['estado'] ?: 'disponible');
-    if ($parqueaderoId) $pdo->prepare('UPDATE parqueaderos SET tipo = ?, estado = ?, observaciones = NULLIF(?, "") WHERE id = ?')->execute([$tipo, $estado, $fila['observaciones'], $parqueaderoId]);
+    if ($parqueaderoId) $pdo->prepare('UPDATE parqueaderos SET tipo = ?, clase_espacio = ?, sotano = NULLIF(?, ""), ubicacion = NULLIF(?, ""), estado = ?, observaciones = NULLIF(?, "") WHERE id = ?')->execute([$tipo, $clase, $fila['sotano'], $fila['ubicacion'], $estado, $fila['observaciones'], $parqueaderoId]);
     else {
-        $pdo->prepare('INSERT INTO parqueaderos (conjunto_id, codigo, tipo, estado, observaciones) VALUES (?, ?, ?, ?, NULLIF(?, ""))')->execute([$conjuntoId, $fila['codigo'], $tipo, $estado, $fila['observaciones']]);
+        $pdo->prepare('INSERT INTO parqueaderos (conjunto_id, codigo, tipo, clase_espacio, sotano, ubicacion, estado, observaciones) VALUES (?, ?, ?, ?, NULLIF(?, ""), NULLIF(?, ""), ?, NULLIF(?, ""))')->execute([$conjuntoId, $fila['codigo'], $tipo, $clase, $fila['sotano'], $fila['ubicacion'], $estado, $fila['observaciones']]);
         $parqueaderoId = (int) $pdo->lastInsertId();
     }
     if ($fila['inmueble_nomenclatura'] === '') return;
@@ -199,7 +208,7 @@ function importarParqueadero(PDO $pdo, int $conjuntoId, int $usuarioId, array $f
     $asignacion = $pdo->prepare('SELECT inmueble_id FROM asignaciones_parqueadero WHERE parqueadero_id = ? AND retirado_en IS NULL LIMIT 1');
     $asignacion->execute([$parqueaderoId]);
     $actual = $asignacion->fetchColumn();
-    if ($actual && (int) $actual !== $inmuebleId) throw new RuntimeException("Fila {$fila['_fila']}: el parqueadero {$fila['codigo']} ya está asignado");
+    if ($actual && (int) $actual !== $inmuebleId) throw new RuntimeException("Fila {$fila['_fila']}: el espacio {$fila['codigo']} ya está asignado");
     if (!$actual) $pdo->prepare('INSERT INTO asignaciones_parqueadero (parqueadero_id, inmueble_id, asignado_por) VALUES (?, ?, ?)')->execute([$parqueaderoId, $inmuebleId, $usuarioId]);
     $pdo->prepare("UPDATE parqueaderos SET estado = 'asignado' WHERE id = ?")->execute([$parqueaderoId]);
 }

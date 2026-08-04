@@ -99,6 +99,9 @@ CREATE TABLE IF NOT EXISTS parqueaderos (
         'visitante',
         'otro'
     ) NOT NULL DEFAULT 'administracion',
+    clase_espacio ENUM('carro', 'moto', 'bodega') NOT NULL DEFAULT 'carro',
+    sotano VARCHAR(50) NULL,
+    ubicacion VARCHAR(100) NULL,
     estado ENUM(
         'disponible',
         'asignado',
@@ -516,3 +519,52 @@ VALUES (
         '2026-08-25 15:00:00',
         'Gimnasio Moderno'
     );
+
+-- Alertas por usuario y consignas operativas de vigilancia
+CREATE TABLE IF NOT EXISTS notificacion_lecturas (
+    usuario_id INT NOT NULL,
+    clave VARCHAR(191) NOT NULL,
+    leida_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (usuario_id, clave),
+    KEY idx_notificacion_lecturas_usuario_fecha (usuario_id, leida_en),
+    FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS consignas_vigilancia (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    conjunto_id INT NOT NULL,
+    destino_tipo ENUM('todos', 'vigilante', 'turno') NOT NULL,
+    vigilante_id INT NULL,
+    turno VARCHAR(50) NULL,
+    titulo VARCHAR(150) NOT NULL,
+    contenido TEXT NOT NULL,
+    creado_por INT NOT NULL,
+    creada_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    vence_en DATETIME NULL,
+    activa TINYINT(1) NOT NULL DEFAULT 1,
+    cerrada_en DATETIME NULL,
+    KEY idx_consignas_vigilancia_bandeja (
+        conjunto_id,
+        activa,
+        creada_en
+    ),
+    KEY idx_consignas_vigilancia_destino (
+        conjunto_id,
+        destino_tipo,
+        vigilante_id,
+        turno
+    ),
+    FOREIGN KEY (conjunto_id) REFERENCES conjuntos (id) ON DELETE CASCADE,
+    FOREIGN KEY (vigilante_id) REFERENCES usuarios (id) ON DELETE CASCADE,
+    FOREIGN KEY (creado_por) REFERENCES usuarios (id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS consigna_vistas (
+    consigna_id INT NOT NULL,
+    vigilante_id INT NOT NULL,
+    vista_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (consigna_id, vigilante_id),
+    KEY idx_consigna_vistas_vigilante_fecha (vigilante_id, vista_en),
+    FOREIGN KEY (consigna_id) REFERENCES consignas_vigilancia (id) ON DELETE CASCADE,
+    FOREIGN KEY (vigilante_id) REFERENCES usuarios (id) ON DELETE CASCADE
+);

@@ -139,6 +139,13 @@ if ($action === 'eliminar_mascota') {
     responseJSON('success', 'Mascota eliminada correctamente');
 }
 
+if ($action === 'mis_espacios') {
+    if (!in_array($rol, ['residente', 'propietario'], true)) responseJSON('error', 'Sin permisos');
+    $stmt = $pdo->prepare("SELECT DISTINCT p.id, p.codigo, p.tipo, p.clase_espacio, p.sotano, p.ubicacion, p.observaciones, i.torre, i.nomenclatura, i.apartamento FROM asignaciones_parqueadero a JOIN parqueaderos p ON p.id = a.parqueadero_id JOIN inmuebles i ON i.id = a.inmueble_id JOIN relacion_inmuebles_usuarios r ON r.inmueble_id = i.id WHERE r.usuario_id = ? AND i.conjunto_id = ? AND a.retirado_en IS NULL ORDER BY FIELD(p.clase_espacio, 'carro', 'moto', 'bodega'), p.sotano, p.codigo");
+    $stmt->execute([$userId, $conjuntoId]);
+    responseJSON('success', '', $stmt->fetchAll());
+}
+
 if ($action === 'mis_vehiculos' || $action === 'mis_mascotas') {
     $inmuebleId = getInmuebleId($pdo, $userId);
     if (!$inmuebleId) responseJSON('success', '', []);

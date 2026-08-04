@@ -4404,3 +4404,247 @@ window.abrirDetalleReclamacion = async function (reclamacionId) {
         if (resultado.status === 'success') { await loadReclamaciones(); window.abrirDetalleReclamacion(reclamacionId); }
     };
 };
+
+
+/* Centro de notificaciones y consignas operativas de vigilancia. */
+let notificacionesActuales = [];
+
+function instalarEstructuraNotificaciones() {
+    const navegacion = document.querySelector('.nav-links');
+    if (navegacion && !navegacion.querySelector('[data-view="consignas"]')) {
+        const item = document.createElement('li');
+        item.dataset.view = 'consignas';
+        item.innerHTML = '<i class="fa-solid fa-clipboard-check"></i> <span>Consignas de vigilancia</span>';
+        navegacion.querySelector('[data-view="perfil"]')?.before(item);
+    }
+    if (!document.getElementById('tpl-consignas')) {
+        document.body.insertAdjacentHTML('beforeend', `<template id="tpl-consignas"><div class="view"><div class="section-toolbar"><div><p class="section-kicker">Coordinación operativa</p><h1 class="page-title">Consignas de vigilancia</h1><p class="muted">Instrucciones de administración con confirmación individual de lectura.</p></div></div><div id="consignasContenido" class="consignas-layout"><p class="muted">Cargando consignas…</p></div></div></template>`);
+    }
+}
+
+function configurarVisibilidadPorRol() {
+    const rol = currentUser?.rol;
+    const permitidas = rol === 'vigilante'
+        ? ['porteria', 'zonas', 'perfil', 'consignas']
+        : ['residente', 'propietario'].includes(rol)
+            ? ['home-residente', 'mis-pagos', 'zonas', 'reclamaciones', 'perfil']
+            : null;
+    if (permitidas) document.querySelectorAll('.nav-links li[data-view]').forEach(item => { item.style.display = permitidas.includes(item.dataset.view) ? 'flex' : 'none'; });
+}
+
+function iconoNotificacion(tipo) {
+    return ({ pqrs: 'fa-clipboard-list', pago: 'fa-money-bill-wave', reserva: 'fa-calendar-check', paquete: 'fa-box', consigna: 'fa-clipboard-check', minuta: 'fa-clipboard' })[tipo] || 'fa-bell';
+}
+
+function actualizarInsigniasMenu(alertas) {
+    const rutasPorTipo = {
+        pqrs: ['reclamaciones'],
+        pago: currentUser?.rol === 'admin' ? ['finanzas'] : ['mis-pagos'],
+        reserva: ['zonas'],
+        paquete: ['porteria'],
+        minuta: ['porteria', 'minuta'],
+        consigna: ['consignas']
+    };
+    const conteos = {};
+    alertas.filter(alerta => !alerta.leida).forEach(alerta => (rutasPorTipo[alerta.tipo] || [alerta.vista]).filter(Boolean).forEach(vista => { conteos[vista] = (conteos[vista] || 0) + 1; }));
+    document.querySelectorAll('.nav-links li[data-view]').forEach(enlace => {
+        let insignia = enlace.querySelector('.nav-notification-badge');
+        const cantidad = conteos[enlace.dataset.view] || 0;
+        if (!insignia && cantidad) { insignia = document.createElement('span'); insignia.className = 'nav-notification-badge'; enlace.appendChild(insignia); }
+        if (insignia) { insignia.textContent = cantidad > 99 ? '99+' : String(cantidad); insignia.classList.toggle('is-visible', cantidad > 0); }
+    });
+}
+
+async function marcarNotificacionesDeVista(vista) {
+    if (!notificacionesActuales.length) await cargarNotificaciones(true);
+    const claves = notificacionesActuales.filter(alerta => !alerta.leida && !alerta.requiereAcuse && (alerta.vista === vista || (vista === 'porteria' && alerta.tipo === 'minuta'))).map(alerta => alerta.clave);
+    if (!claves.length) return;
+    await Promise.all(claves.map(async clave => { const datos = new FormData(); datos.append('action', 'marcar_leida'); datos.append('clave', clave); await fetch('api/notificaciones.php', { method: 'POST', body: datos }); }));
+    await cargarNotificaciones(true);
+}
+
+function instalarCentroNotificaciones() {
+    const campana = document.querySelector('.notifications');
+    if (!campana || campana.dataset.centroListo === '1') return;
+    campana.dataset.centroListo = '1';
+    campana.tabIndex = 0;
+    campana.setAttribute('role', 'button');
+    campana.setAttribute('aria-label', 'Abrir notificaciones');
+    if (!document.getElementById('notificationCenter')) document.body.insertAdjacentHTML('beforeend', '<section id="notificationCenter" class="notification-center hidden" aria-live="polite"><header><h3><i class="fa-regular fa-bell"></i> Notificaciones</h3><button id="btnLeerTodas" class="btn btn-ghost" type="button">Marcar leídas</button></header><div id="notificationList" class="notification-list"></div></section>');
+    const centro = document.getElementById('notificationCenter');
+    const alternar = () => { centro.classList.toggle('hidden'); if (!centro.classList.contains('hidden')) cargarNotificaciones(true); };
+    campana.addEventListener('click', alternar);
+    campana.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); alternar(); } });
+    document.getElementById('btnLeerTodas')?.addEventListener('click', marcarTodasLasNotificaciones);
+    document.getElementById('notificationList')?.addEventListener('click', async event => {
+        const boton = event.target.closest('[data-notification-key]');
+        if (!boton) return;
+        const alerta = notificacionesActuales.find(item => item.clave === boton.dataset.notificationKey);
+        if (!alerta) return;
+        const datos = new FormData(); datos.append('action', 'marcar_leida'); datos.append('clave', alerta.clave);
+        const respuesta = await fetch('api/notificaciones.php', { method: 'POST', body: datos });
+        const resultado = await respuesta.json();
+        if (resultado.status !== 'success') return window.notificar(resultado.message, 'error');
+        centro.classList.add('hidden');
+        if (alerta.vista) loadView(alerta.vista);
+        cargarNotificaciones();
+    });
+    document.addEventListener('click', event => { if (!centro.classList.contains('hidden') && !centro.contains(event.target) && !campana.contains(event.target)) centro.classList.add('hidden'); });
+}
+
+async function cargarNotificaciones(mostrarLista = false) {
+    if (!currentUser) return;
+    try {
+        const respuesta = await fetch(`api/notificaciones.php?action=${mostrarLista ? 'list' : 'contador'}`, { cache: 'no-store' });
+        const resultado = await respuesta.json();
+        if (resultado.status !== 'success') return;
+        const pendientes = Number(resultado.data?.pendientes || 0);
+        const badge = document.querySelector('.notifications .badge');
+        if (badge) { badge.textContent = pendientes > 99 ? '99+' : String(pendientes); badge.classList.toggle('is-visible', pendientes > 0); }
+        if (!mostrarLista) return;
+        notificacionesActuales = resultado.data?.items || [];
+        actualizarInsigniasMenu(notificacionesActuales);
+        const lista = document.getElementById('notificationList');
+        if (!lista) return;
+        lista.innerHTML = notificacionesActuales.length ? notificacionesActuales.map(alerta => `<button type="button" class="notification-item ${alerta.leida ? '' : 'is-unread'}" data-notification-key="${escapeHtml(alerta.clave)}"><span class="notification-icon"><i class="fa-solid ${iconoNotificacion(alerta.tipo)}"></i></span><span><strong>${escapeHtml(alerta.titulo)}</strong><small>${escapeHtml(alerta.detalle)}</small><time>${escapeHtml(formatDateTime(alerta.fecha))}${alerta.requiereAcuse ? ' · Requiere confirmación' : ''}</time></span></button>`).join('') : '<p class="notification-empty">No tienes notificaciones activas.</p>';
+    } catch (error) { console.warn('No fue posible cargar las notificaciones.', error); }
+}
+
+async function marcarTodasLasNotificaciones() {
+    const datos = new FormData(); datos.append('action', 'marcar_todas');
+    const respuesta = await fetch('api/notificaciones.php', { method: 'POST', body: datos });
+    const resultado = await respuesta.json();
+    if (resultado.status !== 'success') return window.notificar(resultado.message, 'error');
+    await cargarNotificaciones(true);
+}
+
+function etiquetaDestinoConsigna(item) {
+    if (item.destino_tipo === 'vigilante') return `Vigilante: ${item.vigilante_nombre || 'Sin nombre'}`;
+    if (item.destino_tipo === 'turno') return `Turno: ${item.turno}`;
+    return 'Todos los vigilantes';
+}
+
+function tarjetaConsigna(item, esAdmin = false) {
+    const estado = item.vista_en ? `<span class="reserva-estado estado-aprobada">Vista ${escapeHtml(formatDateTime(item.vista_en))}</span>` : '<span class="reserva-estado estado-pendiente">Pendiente de ver</span>';
+    const acciones = esAdmin
+        ? `${item.activa === 1 || item.activa === '1' ? `<button class="btn btn-ghost" type="button" data-cerrar-consigna="${Number(item.id)}">Cerrar</button>` : '<span class="muted">Cerrada</span>'}`
+        : item.vista_en ? '<span class="muted">Confirmada</span>' : `<button class="btn btn-primary" type="button" data-vista-consigna="${Number(item.id)}">Marcar como vista</button>`;
+    return `<article class="consigna-card ${item.vista_en ? '' : 'is-pending'}"><header><div><h3>${escapeHtml(item.titulo)}</h3><div class="consigna-meta">${esAdmin ? `${escapeHtml(etiquetaDestinoConsigna(item))} · ${Number(item.vistas || 0)}/${Number(item.destinatarios || 0)} acuses` : `Enviada por ${escapeHtml(item.creador || 'Administración')}`}</div></div>${esAdmin ? '' : estado}</header><p>${escapeHtml(item.contenido)}</p><div class="consigna-meta">${escapeHtml(formatDateTime(item.creada_en))}${item.vence_en ? ` · Vigente hasta ${escapeHtml(formatDateTime(item.vence_en))}` : ''}</div><div style="margin-top:12px;">${acciones}</div></article>`;
+}
+
+function actualizarDestinoFormulario(consignas, destino) {
+    const campoUsuario = document.getElementById('consignaVigilante');
+    const campoTurno = document.getElementById('consignaTurno');
+    if (campoUsuario) campoUsuario.closest('label').classList.toggle('hidden', destino !== 'vigilante');
+    if (campoTurno) campoTurno.closest('label').classList.toggle('hidden', destino !== 'turno');
+    if (campoUsuario && !campoUsuario.options.length) campoUsuario.innerHTML = '<option value="">Selecciona un vigilante…</option>' + (consignas.vigilantes || []).map(v => `<option value="${Number(v.id)}">${escapeHtml(v.nombre)}${v.turno ? ` · ${escapeHtml(v.turno)}` : ''}</option>`).join('');
+    if (campoTurno && !campoTurno.options.length) campoTurno.innerHTML = '<option value="">Selecciona un turno…</option>' + (consignas.turnos || []).map(turno => `<option value="${escapeHtml(turno)}">${escapeHtml(turno)}</option>`).join('');
+}
+
+async function confirmarVistaConsigna(consignaId, recargar = loadConsignas) {
+    const datos = new FormData(); datos.append('action', 'marcar_vista'); datos.append('consigna_id', consignaId);
+    const respuesta = await fetch('api/consignas.php', { method: 'POST', body: datos }); const resultado = await respuesta.json();
+    window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+    if (resultado.status === 'success') { await recargar(); await cargarNotificaciones(); }
+}
+
+async function loadConsignas() {
+    const contenedor = document.getElementById('consignasContenido');
+    if (!contenedor) return;
+    const esAdmin = currentUser?.rol === 'admin';
+    const llamadas = [fetch('api/consignas.php?action=list')];
+    if (esAdmin) llamadas.push(fetch('api/consignas.php?action=destinatarios'));
+    const respuestas = await Promise.all(llamadas); const lista = await respuestas[0].json(); const destinatarios = esAdmin ? await respuestas[1].json() : { data: {} };
+    if (lista.status !== 'success') { contenedor.innerHTML = `<p class="muted">${escapeHtml(lista.message)}</p>`; return; }
+    const tarjetas = lista.data.length ? lista.data.map(item => tarjetaConsigna(item, esAdmin)).join('') : '<p class="empty-state">No hay consignas activas.</p>';
+    if (!esAdmin) {
+        contenedor.innerHTML = `<section class="card"><h2>Mis consignas</h2><p class="muted">Confirma cada instrucción cuando la hayas leído.</p><div class="asset-list">${tarjetas}</div></section>`;
+        contenedor.querySelectorAll('[data-vista-consigna]').forEach(boton => boton.onclick = () => confirmarVistaConsigna(Number(boton.dataset.vistaConsigna)));
+        return;
+    }
+    const datosDestinatarios = destinatarios.status === 'success' ? destinatarios.data : { vigilantes: [], turnos: [] };
+    contenedor.innerHTML = `<section class="card"><h2>Nueva consigna</h2><p class="muted">Dirígela a todo el equipo, un vigilante o un turno. Cada destinatario confirma su lectura.</p><form id="formConsigna" class="consigna-form"><label>Título<input name="titulo" maxlength="150" required placeholder="Ej. Verificar cierre de salón comunal"></label><label>Instrucción<textarea name="contenido" maxlength="5000" required placeholder="Describe la actividad, contexto y resultado esperado."></textarea></label><div class="consigna-destination-fields"><label>Destino<select id="consignaDestino" name="destino_tipo"><option value="todos">Todos los vigilantes</option><option value="vigilante">Un vigilante específico</option><option value="turno">Un turno específico</option></select></label><label class="hidden">Vigilante<select id="consignaVigilante" name="vigilante_id"></select></label><label class="hidden">Turno<select id="consignaTurno" name="turno"></select></label><label>Vence el <input name="vence_en" type="datetime-local"></label></div><button class="btn btn-primary" type="submit">Enviar consigna</button></form></section><section class="card"><h2>Historial de consignas</h2><div class="asset-list">${tarjetas}</div></section>`;
+    const selectorDestino = document.getElementById('consignaDestino');
+    actualizarDestinoFormulario(datosDestinatarios, selectorDestino.value);
+    selectorDestino.onchange = () => actualizarDestinoFormulario(datosDestinatarios, selectorDestino.value);
+    document.getElementById('formConsigna').onsubmit = async event => { event.preventDefault(); const boton = event.currentTarget.querySelector('[type="submit"]'); boton.disabled = true; const datos = new FormData(event.currentTarget); datos.append('action', 'crear'); try { const respuesta = await fetch('api/consignas.php', { method: 'POST', body: datos }); const resultado = await respuesta.json(); window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error'); if (resultado.status === 'success') await loadConsignas(); } finally { boton.disabled = false; } };
+    contenedor.querySelectorAll('[data-cerrar-consigna]').forEach(boton => boton.onclick = async () => { const datos = new FormData(); datos.append('action', 'cerrar'); datos.append('consigna_id', boton.dataset.cerrarConsigna); const respuesta = await fetch('api/consignas.php', { method: 'POST', body: datos }); const resultado = await respuesta.json(); window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error'); if (resultado.status === 'success') await loadConsignas(); });
+}
+
+async function cargarConsignasEnPorteria() {
+    if (currentUser?.rol !== 'vigilante') return;
+    const vista = document.querySelector('#view-container .view');
+    if (!vista) return;
+    const respuesta = await fetch('api/consignas.php?action=list'); const resultado = await respuesta.json();
+    if (resultado.status !== 'success') return;
+    const pendientes = resultado.data.filter(item => !item.vista_en);
+    const tarjetas = pendientes.length ? pendientes.slice(0, 5).map(item => tarjetaConsigna(item)).join('') : '<p class="muted">No tienes consignas pendientes.</p>';
+    vista.querySelector('.porteria-consignas')?.remove();
+    vista.insertAdjacentHTML('afterbegin', `<section class="card porteria-consignas"><div class="section-toolbar"><div><p class="section-kicker">Administración</p><h2>Consignas pendientes</h2></div><button class="btn btn-ghost" type="button" id="verTodasConsignas">Ver todas</button></div><div class="asset-list">${tarjetas}</div></section>`);
+    vista.querySelectorAll('[data-vista-consigna]').forEach(boton => boton.onclick = () => confirmarVistaConsigna(Number(boton.dataset.vistaConsigna), loadPorteria));
+    vista.querySelector('#verTodasConsignas').onclick = () => loadView('consignas');
+}
+
+const configurarNavegacionNotificacionesBase = setupNavigation;
+setupNavigation = function () {
+    instalarEstructuraNotificaciones();
+    configurarNavegacionNotificacionesBase();
+    configurarVisibilidadPorRol();
+    document.querySelectorAll('.nav-links li[data-view]').forEach(enlace => {
+        if (enlace.dataset.notificacionVistaLista === '1') return;
+        enlace.dataset.notificacionVistaLista = '1';
+        enlace.addEventListener('click', () => marcarNotificacionesDeVista(enlace.dataset.view));
+    });
+};
+const cargarVistaNotificacionesBase = loadView;
+loadView = function (vista) { cargarVistaNotificacionesBase(vista); if (vista === 'consignas') loadConsignas(); };
+const cargarPorteriaConsignasBase = loadPorteria;
+loadPorteria = async function () { await cargarPorteriaConsignasBase(); await cargarConsignasEnPorteria(); };
+const iniciarAppNotificacionesBase = initApp;
+initApp = function () { instalarEstructuraNotificaciones(); iniciarAppNotificacionesBase(); if (currentUser?.rol === 'propietario') loadView('home-residente'); instalarCentroNotificaciones(); cargarNotificaciones(true); window.clearInterval(window.intervaloNotificaciones); window.intervaloNotificaciones = window.setInterval(() => cargarNotificaciones(true), 60000); };
+
+
+/* Inventario digital de vehículos, parqueaderos y bodegas. */
+let espaciosFisicosActuales = [];
+
+function etiquetaClaseEspacio(clase) { return ({ carro: 'Parqueadero carro', moto: 'Parqueadero moto', bodega: 'Bodega' })[clase] || clase || 'Espacio'; }
+function iconoClaseEspacio(clase) { return ({ carro: 'fa-car', moto: 'fa-motorcycle', bodega: 'fa-box-archive' })[clase] || 'fa-square-parking'; }
+function etiquetaUbicacionEspacio(espacio) { return [espacio.sotano, espacio.ubicacion].filter(Boolean).join(' · ') || 'Ubicación no informada'; }
+
+const cargarVistaEspaciosFisicosBase = loadView;
+loadView = function (viewName) {
+    if (viewName !== 'parqueaderos') return cargarVistaEspaciosFisicosBase(viewName);
+    document.getElementById('view-container').innerHTML = `<div class="view espacios-fisicos-view"><div class="section-toolbar"><div><p class="section-kicker">Administración · Inventario físico</p><h1 class="page-title">Espacios, parqueaderos y bodegas</h1><p class="muted">Consulta en línea los cupos de carro, moto y bodegas por sótano, con su asignación e historial.</p></div></div><section id="resumenEspacios" class="space-summary-grid"><span class="muted">Cargando resumen…</span></section><div class="parking-forms-grid"><form id="formEspacioFisico" class="card parking-form"><h3><i class="fa-solid fa-square-parking"></i> Registrar espacio</h3><input type="hidden" name="id"><input name="codigo" maxlength="50" placeholder="Código, ej. S1-C-101 o B-12" required><select name="clase_espacio" required><option value="carro">Parqueadero para carro</option><option value="moto">Parqueadero para moto</option><option value="bodega">Bodega</option></select><input name="sotano" maxlength="50" placeholder="Sótano o nivel, ej. S1"><input name="ubicacion" maxlength="100" placeholder="Ubicación, ej. Bloque A / fila 3"><select name="tipo"><option value="administracion">Administración</option><option value="privado">Privado</option><option value="visitante">Visitante</option><option value="otro">Otro</option></select><select name="estado"><option value="disponible">Disponible</option><option value="inactivo">Inactivo</option></select><textarea name="observaciones" maxlength="255" rows="2" placeholder="Observaciones opcionales"></textarea><button class="btn btn-primary" type="submit">Guardar espacio</button><button id="cancelarEdicionEspacio" class="btn btn-ghost hidden" type="button">Cancelar edición</button></form><form id="formAsignarEspacio" class="card parking-form"><h3><i class="fa-solid fa-link"></i> Asignar a inmueble</h3><select id="asignarEspacio" name="parqueadero_id" required><option value="">Cargando espacios…</option></select><select id="asignarInmuebleEspacio" name="inmueble_id" required><option value="">Cargando inmuebles…</option></select><button class="btn btn-primary" type="submit">Asignar espacio</button><p class="muted">La asignación se conserva en el historial al retirarla o cambiarla.</p></form></div><section class="card"><div class="space-catalog-header"><div><h3>Inventario de espacios</h3><p class="muted">Filtra por clase física o sótano para ubicar rápidamente cualquier cupo o bodega.</p></div><div class="space-filters"><select id="filtroClaseEspacio"><option value="">Todas las clases</option><option value="carro">Carro</option><option value="moto">Moto</option><option value="bodega">Bodega</option></select><select id="filtroSotanoEspacio"><option value="">Todos los sótanos</option></select></div></div><div class="table-responsive"><table class="data-table"><thead><tr><th>Código</th><th>Clase</th><th>Sótano / ubicación</th><th>Régimen</th><th>Estado</th><th>Asignado a</th><th>Acciones</th></tr></thead><tbody id="tb-espaciosFisicos"><tr><td colspan="7">Cargando…</td></tr></tbody></table></div></section></div>`;
+    cargarInventarioEspacios();
+};
+
+async function cargarInventarioEspacios() {
+    const [espaciosR, inmueblesR] = await Promise.all([fetch('api/parqueaderos.php?action=list'), fetch('api/parqueaderos.php?action=inmuebles')]);
+    const [espacios, inmuebles] = await Promise.all([espaciosR.json(), inmueblesR.json()]);
+    if (espacios.status !== 'success' || inmuebles.status !== 'success') return window.notificar('No fue posible cargar el inventario de espacios.', 'error');
+    espaciosFisicosActuales = espacios.data || []; inmueblesParqueaderos = inmuebles.data || [];
+    const resumen = ['carro', 'moto', 'bodega'].map(clase => { const registros = espaciosFisicosActuales.filter(item => item.clase_espacio === clase); return `<article><i class="fa-solid ${iconoClaseEspacio(clase)}"></i><span>${etiquetaClaseEspacio(clase)}</span><strong>${registros.length}</strong><small>${registros.filter(item => item.estado === 'disponible').length} disponibles</small></article>`; }).join('');
+    document.getElementById('resumenEspacios').innerHTML = resumen;
+    const disponibles = espaciosFisicosActuales.filter(item => item.estado === 'disponible');
+    document.getElementById('asignarEspacio').innerHTML = '<option value="">Selecciona un espacio…</option>' + disponibles.map(item => `<option value="${Number(item.id)}">${escapeHtml(item.codigo)} · ${escapeHtml(etiquetaClaseEspacio(item.clase_espacio))} · ${escapeHtml(etiquetaUbicacionEspacio(item))}</option>`).join('');
+    document.getElementById('asignarInmuebleEspacio').innerHTML = '<option value="">Selecciona un inmueble…</option>' + inmueblesParqueaderos.map(item => `<option value="${Number(item.id)}">${escapeHtml(item.bloque)} · ${escapeHtml(item.nomenclatura || item.apartamento)}</option>`).join('');
+    const filtroClase = document.getElementById('filtroClaseEspacio'); const filtroSotano = document.getElementById('filtroSotanoEspacio');
+    const sotanos = [...new Set(espaciosFisicosActuales.map(item => item.sotano).filter(Boolean))].sort();
+    filtroSotano.innerHTML = '<option value="">Todos los sótanos</option>' + sotanos.map(sotano => `<option value="${escapeHtml(sotano)}">${escapeHtml(sotano)}</option>`).join('');
+    const renderTabla = () => { const filas = espaciosFisicosActuales.filter(item => (!filtroClase.value || item.clase_espacio === filtroClase.value) && (!filtroSotano.value || item.sotano === filtroSotano.value)); document.getElementById('tb-espaciosFisicos').innerHTML = filas.length ? filas.map(item => { const unidad = item.asignacion_id ? `${item.torre || 'Sin bloque'} · ${item.nomenclatura || item.apartamento}` : '—'; const acciones = `<button class="btn btn-ghost parking-action" type="button" onclick="window.editarEspacioFisico(${Number(item.id)})">Editar</button>${item.asignacion_id ? `<button class="btn btn-ghost parking-action" type="button" onclick="window.retirarEspacioFisico(${Number(item.asignacion_id)})">Retirar</button>` : ''}<button class="btn btn-ghost parking-action" type="button" onclick="window.verHistorialEspacioFisico(${Number(item.id)})">Historial</button>`; return `<tr><td><strong>${escapeHtml(item.codigo)}</strong></td><td><i class="fa-solid ${iconoClaseEspacio(item.clase_espacio)}"></i> ${escapeHtml(etiquetaClaseEspacio(item.clase_espacio))}</td><td>${escapeHtml(etiquetaUbicacionEspacio(item))}</td><td>${escapeHtml(item.tipo)}</td><td><span class="reserva-estado ${item.estado === 'asignado' ? 'estado-aprobada' : item.estado === 'inactivo' ? 'estado-rechazada' : 'estado-pendiente'}">${escapeHtml(item.estado)}</span></td><td>${escapeHtml(unidad)}</td><td class="space-actions">${acciones}</td></tr>`; }).join('') : '<tr><td colspan="7" class="empty-state">No hay espacios para este filtro.</td></tr>'; };
+    renderTabla(); filtroClase.onchange = renderTabla; filtroSotano.onchange = renderTabla;
+    const form = document.getElementById('formEspacioFisico');
+    form.onsubmit = async event => { event.preventDefault(); const datos = new FormData(form); datos.append('action', 'guardar'); const respuesta = await fetch('api/parqueaderos.php', { method: 'POST', body: datos }); const resultado = await respuesta.json(); window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error'); if (resultado.status === 'success') cargarInventarioEspacios(); };
+    document.getElementById('cancelarEdicionEspacio').onclick = () => { form.reset(); form.elements.id.value = ''; document.getElementById('cancelarEdicionEspacio').classList.add('hidden'); };
+    document.getElementById('formAsignarEspacio').onsubmit = async event => { event.preventDefault(); const datos = new FormData(event.currentTarget); datos.append('action', 'asignar'); const respuesta = await fetch('api/parqueaderos.php', { method: 'POST', body: datos }); const resultado = await respuesta.json(); window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error'); if (resultado.status === 'success') cargarInventarioEspacios(); };
+}
+
+window.editarEspacioFisico = function (id) { const item = espaciosFisicosActuales.find(espacio => Number(espacio.id) === Number(id)); const form = document.getElementById('formEspacioFisico'); if (!item || !form) return;['id', 'codigo', 'clase_espacio', 'sotano', 'ubicacion', 'tipo', 'estado', 'observaciones'].forEach(campo => { form.elements[campo].value = item[campo] || ''; }); document.getElementById('cancelarEdicionEspacio').classList.remove('hidden'); form.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+window.retirarEspacioFisico = async function (asignacionId) { const motivo = window.prompt('Motivo del retiro (opcional):') ?? ''; if (!await confirmarAccion({ titulo: '¿Retirar espacio?', texto: 'La asignación se conservará en el historial.', confirmar: 'Retirar', icono: 'warning' })) return; const datos = new FormData(); datos.append('action', 'retirar'); datos.append('asignacion_id', asignacionId); datos.append('motivo_retiro', motivo); const respuesta = await fetch('api/parqueaderos.php', { method: 'POST', body: datos }); const resultado = await respuesta.json(); window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error'); if (resultado.status === 'success') cargarInventarioEspacios(); };
+window.verHistorialEspacioFisico = async function (espacioId) { const codigo = espaciosFisicosActuales.find(item => Number(item.id) === Number(espacioId))?.codigo || 'Espacio'; const respuesta = await fetch(`api/parqueaderos.php?action=historial&parqueadero_id=${encodeURIComponent(espacioId)}`); const resultado = await respuesta.json(); if (resultado.status !== 'success') return window.notificar(resultado.message, 'error'); const filas = resultado.data.length ? resultado.data.map(item => `<tr><td>${escapeHtml(item.torre || 'Sin bloque')} · ${escapeHtml(item.nomenclatura || item.apartamento)}</td><td>${escapeHtml(item.asignado_en)}</td><td>${item.retirado_en ? escapeHtml(item.retirado_en) : '<span class="reserva-estado estado-aprobada">Vigente</span>'}</td><td>${escapeHtml(item.asignado_por_nombre || 'Sistema')}</td><td>${escapeHtml(item.retirado_por_nombre || '—')}</td></tr>`).join('') : '<tr><td colspan="5">No hay asignaciones registradas.</td></tr>'; window.Swal?.fire({ title: `Historial ${escapeHtml(codigo)}`, html: `<div class="parking-history-dialog"><table class="data-table"><thead><tr><th>Inmueble</th><th>Asignado</th><th>Retirado</th><th>Asignó</th><th>Retiró</th></tr></thead><tbody>${filas}</tbody></table></div>`, width: 900, confirmButtonText: 'Cerrar' }); };
+
+const cargarInicioResidenteEspaciosBase = loadHomeResidente;
+loadHomeResidente = async function () { await cargarInicioResidenteEspaciosBase(); if (!['residente', 'propietario'].includes(currentUser?.rol)) return; const respuesta = await fetch('api/inmuebles.php?action=mis_espacios'); const resultado = await respuesta.json(); if (resultado.status !== 'success') return; const vista = document.querySelector('#view-container .view'); if (!vista) return; vista.querySelector('#misEspaciosAsignados')?.remove(); const tarjetas = resultado.data.length ? resultado.data.map(item => `<article><i class="fa-solid ${iconoClaseEspacio(item.clase_espacio)}"></i><div><strong>${escapeHtml(item.codigo)}</strong><small>${escapeHtml(etiquetaClaseEspacio(item.clase_espacio))} · ${escapeHtml(etiquetaUbicacionEspacio(item))}</small><small>${escapeHtml([item.torre, item.nomenclatura || item.apartamento].filter(Boolean).join(' · '))}</small></div></article>`).join('') : '<p class="muted">No tienes parqueaderos ni bodegas asignados.</p>'; vista.insertAdjacentHTML('afterbegin', `<section id="misEspaciosAsignados" class="card mis-espacios-card"><div class="section-toolbar"><div><p class="section-kicker">Mis activos</p><h3>Mis parqueaderos y bodegas</h3></div></div><div class="mis-espacios-list">${tarjetas}</div></section>`); };
+
+const iniciarAppEspaciosFisicosBase = initApp;
+initApp = function () { iniciarAppEspaciosFisicosBase(); const enlace = document.querySelector('.nav-links li[data-view="parqueaderos"] span'); if (enlace) enlace.textContent = 'Espacios y bodegas'; };
