@@ -65,27 +65,32 @@ function filasXlsx(string $ruta, int $indiceHoja = 0): array
     if (!isset($hojas[$indiceHoja])) responseJSON('error', 'La hoja seleccionada no existe en este archivo');
     $zip = new ZipArchive();
     if ($zip->open($ruta) !== true) responseJSON('error', 'El archivo XLSX no es un archivo ZIP válido');
+    $namespace = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
     $shared = [];
     $xmlCompartido = $zip->getFromName('xl/sharedStrings.xml');
     if ($xmlCompartido !== false && ($strings = simplexml_load_string($xmlCompartido, 'SimpleXMLElement', LIBXML_NONET | LIBXML_NOCDATA))) {
-        foreach ($strings->si as $item) $shared[] = trim((string) $item);
+        $namespace = $strings->getNamespaces(true)[''] ?? $namespace;
+        foreach ($strings->children($namespace)->si as $item) $shared[] = trim((string) $item);
     }
     $xmlHoja = $zip->getFromName($hojas[$indiceHoja]['ruta']);
     $zip->close();
     if ($xmlHoja === false || !($hoja = simplexml_load_string($xmlHoja, 'SimpleXMLElement', LIBXML_NONET | LIBXML_NOCDATA))) responseJSON('error', 'No fue posible leer la hoja seleccionada del XLSX');
+    $namespace = $hoja->getNamespaces(true)[''] ?? $namespace;
     $filas = [];
-    foreach ($hoja->sheetData->row as $filaXml) {
+    $datosHoja = $hoja->children($namespace)->sheetData;
+    foreach ($datosHoja->children($namespace)->row as $filaXml) {
         $fila = [];
-        foreach ($filaXml->c as $celda) {
+        foreach ($filaXml->children($namespace)->c as $celda) {
             preg_match('/[A-Z]+/', (string) $celda['r'], $coincidencia);
             $columna = 0;
             foreach (str_split($coincidencia[0] ?? 'A') as $letra) $columna = $columna * 26 + (ord($letra) - 64);
             $indice = max(0, $columna - 1);
             while (count($fila) < $indice) $fila[] = '';
+            $contenido = $celda->children($namespace);
             $tipo = (string) $celda['t'];
-            if ($tipo === 's') $valor = $shared[(int) $celda->v] ?? '';
-            elseif ($tipo === 'inlineStr') $valor = trim((string) $celda->is);
-            else $valor = (string) $celda->v;
+            if ($tipo === 's') $valor = $shared[(int) $contenido->v] ?? '';
+            elseif ($tipo === 'inlineStr') $valor = trim((string) $contenido->is);
+            else $valor = (string) $contenido->v;
             $fila[$indice] = $valor;
         }
         $filas[] = $fila;
