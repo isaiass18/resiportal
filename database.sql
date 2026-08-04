@@ -67,6 +67,12 @@ CREATE TABLE IF NOT EXISTS relacion_inmuebles_usuarios (
     inmueble_id INT NOT NULL,
     usuario_id INT NOT NULL,
     tipo_relacion ENUM('propietario', 'residente') NOT NULL,
+    UNIQUE KEY uq_relacion_inmueble_usuario_tipo (
+        inmueble_id,
+        usuario_id,
+        tipo_relacion
+    ),
+    KEY idx_relacion_usuario_inmueble (usuario_id, inmueble_id),
     FOREIGN KEY (inmueble_id) REFERENCES inmuebles (id) ON DELETE CASCADE,
     FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
 );
@@ -84,6 +90,9 @@ CREATE TABLE IF NOT EXISTS vehiculos (
 CREATE TABLE IF NOT EXISTS mascotas (
     id INT AUTO_INCREMENT PRIMARY KEY,
     inmueble_id INT NOT NULL,
+    tipo VARCHAR(50),
+    nombre VARCHAR(100),
+    raza VARCHAR(100),
     descripcion TEXT,
     FOREIGN KEY (inmueble_id) REFERENCES inmuebles (id) ON DELETE CASCADE
 );
@@ -122,6 +131,8 @@ CREATE TABLE IF NOT EXISTS asignaciones_parqueadero (
     retirado_por INT NULL,
     retirado_en TIMESTAMP NULL,
     motivo_retiro VARCHAR(255) NULL,
+    KEY idx_asignaciones_inmueble_activa (inmueble_id, retirado_en),
+    KEY idx_asignaciones_espacio_activa (parqueadero_id, retirado_en),
     FOREIGN KEY (parqueadero_id) REFERENCES parqueaderos (id) ON DELETE CASCADE,
     FOREIGN KEY (inmueble_id) REFERENCES inmuebles (id) ON DELETE CASCADE,
     FOREIGN KEY (asignado_por) REFERENCES usuarios (id) ON DELETE SET NULL,
@@ -245,12 +256,81 @@ CREATE TABLE IF NOT EXISTS visitantes (
 
 CREATE TABLE IF NOT EXISTS minuta_porteria (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    conjunto_id INT NOT NULL,
     vigilante_id INT NOT NULL,
     asunto VARCHAR(150) NOT NULL,
     novedad TEXT NOT NULL,
     fecha_novedad DATETIME NULL,
+    estado ENUM(
+        'pendiente',
+        'en_progreso',
+        'resuelta',
+        'cerrada'
+    ) NOT NULL DEFAULT 'pendiente',
+    primera_vista_por INT NULL,
+    primera_vista_en DATETIME NULL,
+    resuelto_por INT NULL,
+    resuelto_en DATETIME NULL,
+    cerrado_por INT NULL,
+    cerrado_en DATETIME NULL,
     fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (vigilante_id) REFERENCES usuarios (id) ON DELETE CASCADE
+    KEY idx_minuta_bandeja_admin (
+        conjunto_id,
+        estado,
+        fecha_registro
+    ),
+    KEY idx_minuta_no_vistas (
+        conjunto_id,
+        primera_vista_en,
+        fecha_registro
+    ),
+    FOREIGN KEY (conjunto_id) REFERENCES conjuntos (id) ON DELETE CASCADE,
+    FOREIGN KEY (vigilante_id) REFERENCES usuarios (id) ON DELETE CASCADE,
+    FOREIGN KEY (primera_vista_por) REFERENCES usuarios (id) ON DELETE SET NULL,
+    FOREIGN KEY (resuelto_por) REFERENCES usuarios (id) ON DELETE SET NULL,
+    FOREIGN KEY (cerrado_por) REFERENCES usuarios (id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS minuta_lecturas (
+    minuta_id INT NOT NULL,
+    usuario_id INT NOT NULL,
+    vista_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (minuta_id, usuario_id),
+    KEY idx_minuta_lecturas_usuario_fecha (usuario_id, vista_en),
+    FOREIGN KEY (minuta_id) REFERENCES minuta_porteria (id) ON DELETE CASCADE,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS minuta_seguimientos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    minuta_id INT NOT NULL,
+    autor_id INT NULL,
+    tipo ENUM(
+        'creacion',
+        'vista',
+        'respuesta',
+        'cambio_estado',
+        'resolucion',
+        'cierre',
+        'reapertura'
+    ) NOT NULL,
+    contenido TEXT NULL,
+    estado_anterior ENUM(
+        'pendiente',
+        'en_progreso',
+        'resuelta',
+        'cerrada'
+    ) NULL,
+    estado_nuevo ENUM(
+        'pendiente',
+        'en_progreso',
+        'resuelta',
+        'cerrada'
+    ) NULL,
+    creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_minuta_seguimientos_cronologia (minuta_id, creado_en, id),
+    FOREIGN KEY (minuta_id) REFERENCES minuta_porteria (id) ON DELETE CASCADE,
+    FOREIGN KEY (autor_id) REFERENCES usuarios (id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS minuta_adjuntos (

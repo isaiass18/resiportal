@@ -2,11 +2,15 @@
 session_start();
 require_once 'config.php';
 header('Content-Type: application/json; charset=utf-8');
-if (!isset($_SESSION['user_id']) || !in_array($_SESSION['user_rol'], ['admin', 'vigilante'], true)) responseJSON('error', 'Sin permisos');
+if (!isset($_SESSION['user_id'], $_SESSION['conjunto_id']) || !in_array($_SESSION['user_rol'] ?? '', ['admin', 'vigilante'], true)) responseJSON('error', 'Sin permisos');
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 $userId = (int) $_SESSION['user_id'];
 $conjuntoId = (int) $_SESSION['conjunto_id'];
+$rol = $_SESSION['user_rol'];
+$cuenta = $pdo->prepare('SELECT id FROM usuarios WHERE id = ? AND conjunto_id = ? AND activo = 1');
+$cuenta->execute([$userId, $conjuntoId]);
+if (!$cuenta->fetch()) responseJSON('error', 'La cuenta ya no está activa');
 
 function inmuebleDelConjunto(PDO $pdo, int $inmuebleId, int $conjuntoId): bool
 {
@@ -58,8 +62,15 @@ if ($action === 'list_visitantes') {
     responseJSON('success', '', $stmt->fetchAll());
 }
 if ($action === 'list_minuta') {
-    $stmt = $pdo->prepare('SELECT m.*, u.nombre AS vigilante, COALESCE(m.fecha_novedad, m.fecha_registro) AS fecha_operativa FROM minuta_porteria m JOIN usuarios u ON u.id = m.vigilante_id WHERE u.conjunto_id = ? ORDER BY COALESCE(m.fecha_novedad, m.fecha_registro) DESC LIMIT 50');
-    $stmt->execute([$conjuntoId]);
+    $sql = 'SELECT m.*, u.nombre AS vigilante, COALESCE(m.fecha_novedad, m.fecha_registro) AS fecha_operativa FROM minuta_porteria m JOIN usuarios u ON u.id = m.vigilante_id WHERE u.conjunto_id = ?';
+    $params = [$conjuntoId];
+    if ($rol === 'vigilante') {
+        $sql .= ' AND m.vigilante_id = ?';
+        $params[] = $userId;
+    }
+    $sql .= ' ORDER BY COALESCE(m.fecha_novedad, m.fecha_registro) DESC LIMIT 50';
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     responseJSON('success', '', adjuntosMinuta($pdo, $stmt->fetchAll()));
 }
 if ($action === 'list_paquetes') {
@@ -117,11 +128,13 @@ if ($action === 'registrar_novedad') {
     try {
         $adjunto = guardarAdjuntoNovedad($_FILES['adjunto'] ?? []);
         $pdo->beginTransaction();
-        $stmt = $pdo->prepare('INSERT INTO minuta_porteria (vigilante_id, asunto, novedad, fecha_novedad) VALUES (?, ?, ?, ?)');
-        $stmt->execute([$userId, $asunto, $novedad, $fecha->format('Y-m-d H:i:s')]);
+        $stmt = $pdo->prepare('INSERT INTO minuta_porteria (conjunto_id, vigilante_id, asunto, novedad, fecha_novedad, estado) VALUES (?, ?, ?, ?, ?, "pendiente")');
+        $stmt->execute([$conjuntoId, $userId, $asunto, $novedad, $fecha->format('Y-m-d H:i:s')]);
+        $minutaId = (int) $pdo->lastInsertId();
+        $pdo->prepare("INSERT INTO minuta_seguimientos (minuta_id, autor_id, tipo, contenido) VALUES (?, ?, 'creacion', ?)")->execute([$minutaId, $userId, $novedad]);
         if ($adjunto) {
             $guardar = $pdo->prepare('INSERT INTO minuta_adjuntos (minuta_id, nombre_original, archivo, mime, tamano) VALUES (?, ?, ?, ?, ?)');
-            $guardar->execute([(int) $pdo->lastInsertId(), $adjunto['nombre_original'], $adjunto['archivo'], $adjunto['mime'], $adjunto['tamano']]);
+            $guardar->execute([$minutaId, $adjunto['nombre_original'], $adjunto['archivo'], $adjunto['mime'], $adjunto['tamano']]);
         }
         $pdo->commit();
         responseJSON('success', 'Novedad registrada en minuta' . ($adjunto ? ' con adjunto.' : '.'));
