@@ -1851,7 +1851,8 @@ let consecutivoEtiquetaFormulario = 0;
 function rotularFormularios(root = document) {
     const formularios = root.matches?.('form') ? [root] : [...root.querySelectorAll?.('form') || []];
     formularios.forEach(formulario => formulario.querySelectorAll('input, select, textarea').forEach(campo => {
-        if (campo.dataset.etiquetado === 'si' || ['hidden', 'submit', 'button', 'checkbox', 'radio'].includes(campo.type) || campo.labels?.length) return;
+        const etiquetaExistente = campo.labels?.length || [...(campo.closest('.form-group')?.querySelectorAll('label') || [])].some(etiqueta => !etiqueta.classList.contains('form-field-label'));
+        if (campo.dataset.etiquetado === 'si' || ['hidden', 'submit', 'button', 'checkbox', 'radio'].includes(campo.type) || etiquetaExistente) return;
         const texto = etiquetasCamposFormulario[campo.id] || campo.dataset.label || (campo.placeholder || '').replace(/\s*\([^)]*\)/g, '') || campo.querySelector?.('option')?.textContent?.replace(/[.….]+$/, '').trim();
         campo.dataset.etiquetado = 'si';
         if (!texto) return;
@@ -3622,6 +3623,9 @@ function prepararInterfazUsuarios() {
     const selectRol = document.getElementById('usrRol');
     if (selectRol) selectRol.innerHTML = '<option value="admin">Administrador</option><option value="vigilante">Vigilante</option><option value="residente">Residente</option><option value="propietario">Propietario</option>';
     const form = document.getElementById('formCrearUsuario');
+    // El inmueble puede estar oculto según el rol; validamos en el servidor para
+    // que un campo oculto nunca bloquee el envío sin mostrar una explicación.
+    if (form) form.noValidate = true;
     if (form && !document.getElementById('usrInmuebleGrupo')) {
         document.getElementById('usrEmail')?.removeAttribute('required');
         const boton = form.querySelector('button[type="submit"]');

@@ -4045,6 +4045,11 @@ hr {
     font-weight: 700;
 }
 
+.user-access-toggle[hidden],
+#usrInmuebleGrupo[hidden] {
+    display: none !important;
+}
+
 .user-access-toggle input {
     width: 16px;
     height: 16px;
