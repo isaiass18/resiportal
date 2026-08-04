@@ -307,7 +307,11 @@ try {
     }
     if ($action === 'get_headers') {
         [$headers, $rows] = archivoImportacion();
-        responseJSON('success', 'Cabeceras leídas', ['headers' => $headers, 'rows' => count($rows)]);
+        responseJSON('success', 'Contenido de hoja leído', [
+            'headers' => $headers,
+            'rows' => count($rows),
+            'raw_rows' => $rows,
+        ]);
     }
     $mapeo = json_decode($_POST['mapping'] ?? '', true);
     if (!is_array($mapeo)) responseJSON('error', 'Mapeo de columnas inválido');

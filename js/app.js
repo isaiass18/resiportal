@@ -4894,3 +4894,215 @@ loadView = function (vista) {
     ['buscarNovedadVigilancia', 'filtroEstadoNovedad', 'filtroNoVistasNovedad'].forEach(id => document.getElementById(id)?.addEventListener(id === 'buscarNovedadVigilancia' ? 'input' : 'change', () => cargarNovedadesVigilancia()));
     cargarNovedadesVigilancia();
 };
+
+
+/* Interfaz consolidada 2026-08-04: marca única e importación visual por hoja. */
+window.aplicarMarcaPortal = async function () {
+    try {
+        const respuesta = await fetch('api/conjuntos.php?action=public_config', { cache: 'no-store' });
+        const resultado = await respuesta.json();
+        if (resultado.status !== 'success') return;
+        const marca = resultado.data || {};
+        const nombre = String(marca.nombre || 'ResiPortal');
+        const logo = String(marca.logo_url || '');
+        document.title = `${nombre} · Portal residencial`;
+        document.querySelectorAll('[data-conjunto-brand]').forEach(marcaDuplicada => marcaDuplicada.remove());
+        document.querySelectorAll('.public-nav .logo, .sidebar .logo').forEach(contenedor => {
+            contenedor.innerHTML = logo
+                ? `<img class="conjunto-brand-logo" src="${escapeHtml(logo)}" alt="Logo de ${escapeHtml(nombre)}"><span>${escapeHtml(nombre)}</span>`
+                : `<i class="fa-solid fa-building-user" aria-hidden="true"></i><span>${escapeHtml(nombre)}</span>`;
+        });
+        document.querySelectorAll('.page-title').forEach(titulo => {
+            if (/Bienvenido a ResiPortal/i.test(titulo.textContent)) titulo.textContent = `Bienvenido a ${nombre}`;
+        });
+        let favicon = document.getElementById('app-favicon');
+        if (!favicon) {
+            favicon = document.createElement('link');
+            favicon.id = 'app-favicon';
+            favicon.rel = 'icon';
+            document.head.appendChild(favicon);
+        }
+        favicon.href = logo || favicon.href;
+    } catch (error) {
+        console.warn('No fue posible cargar la marca del conjunto.', error);
+    }
+};
+
+const cargarVistaMarcaUnicaBase = loadView;
+loadView = function (vista) {
+    const vistaUnificada = vista === 'minuta' && currentUser?.rol === 'admin' ? 'novedades-vigilancia' : vista;
+    const resultado = cargarVistaMarcaUnicaBase(vistaUnificada);
+    Promise.resolve(resultado).finally(() => window.aplicarMarcaPortal());
+    return resultado;
+};
+
+window.initImportView = function () {
+    const input = document.getElementById('excelFile');
+    const zona = document.getElementById('uploadZone');
+    const seccion = document.getElementById('mappingSection');
+    const formulario = document.getElementById('mappingForm');
+    const botonExterno = document.getElementById('btnProcesarImportacion');
+    if (!input || !zona || !seccion || !formulario || zona.dataset.importacionVisual) return;
+
+    zona.dataset.importacionVisual = '1';
+    input.accept = '.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv';
+    zona.querySelector('h3').textContent = 'Arrastra un archivo XLSX o CSV aquí';
+    seccion.classList.add('hidden');
+    botonExterno?.closest('.actions')?.classList.add('hidden');
+
+    const tipos = {
+        residentes: { titulo: 'Residentes', descripcion: 'Relaciona documento, nombre, correo, teléfono y unidad.', campos: [['documento', 'Documento *'], ['nombre', 'Nombre completo *'], ['email', 'Correo'], ['contacto', 'Teléfono'], ['inmueble_nomenclatura', 'Nomenclatura del inmueble']] },
+        propietarios: { titulo: 'Propietarios', descripcion: 'Relaciona documento, nombre, correo, teléfono y unidad.', campos: [['documento', 'Documento *'], ['nombre', 'Nombre completo *'], ['email', 'Correo'], ['contacto', 'Teléfono'], ['inmueble_nomenclatura', 'Nomenclatura del inmueble']] },
+        inmuebles: { titulo: 'Apartamentos o casas', descripcion: 'Relaciona los datos disponibles de cada unidad.', campos: [['nomenclatura', 'Nomenclatura *'], ['tipo_unidad', 'Tipo: apartamento/casa'], ['torre', 'Torre o bloque'], ['apartamento', 'Apartamento'], ['coeficiente', 'Coeficiente'], ['cuota_administracion', 'Cuota de administración'], ['mora_actual', 'Mora actual']] },
+        parqueaderos: { titulo: 'Parqueaderos, motos y bodegas', descripcion: 'Relaciona código, clase física y unidad asignada.', campos: [['codigo', 'Código *'], ['tipo', 'Régimen'], ['clase_espacio', 'Clase: carro/moto/bodega'], ['sotano', 'Sótano o nivel'], ['ubicacion', 'Ubicación'], ['estado', 'Estado'], ['observaciones', 'Observaciones'], ['inmueble_nomenclatura', 'Nomenclatura asignada']] },
+        mascotas: { titulo: 'Mascotas', descripcion: 'Relaciona unidad, tipo, nombre, raza y descripción.', campos: [['inmueble_nomenclatura', 'Nomenclatura del inmueble *'], ['tipo_mascota', 'Tipo *'], ['nombre_mascota', 'Nombre *'], ['raza', 'Raza'], ['descripcion', 'Descripción']] }
+    };
+    const sinonimos = { documento: ['documento', 'cedula', 'identificacion', 'id'], nombre: ['nombre', 'nombrecompleto', 'nombres'], email: ['email', 'correo', 'mail'], contacto: ['telefono', 'celular', 'contacto'], inmueble_nomenclatura: ['inmueble', 'nomenclatura', 'apartamento', 'apto', 'unidad', 'casa'], tipo_mascota: ['tipo', 'especie', 'tipomascota'], nombre_mascota: ['nombre', 'mascota', 'nombremascota'], tipo_unidad: ['tipounidad', 'tipo'], cuota_administracion: ['cuota', 'administracion'], mora_actual: ['mora', 'deuda'], clase_espacio: ['clase', 'espacio', 'vehiculo'], sotano: ['sotano', 'nivel'], ubicacion: ['ubicacion', 'localizacion'] };
+
+    zona.insertAdjacentHTML('beforebegin', `<p class="import-help">Selecciona qué deseas cargar y el archivo. Después verás la hoja completa para indicar, directamente sobre cada columna, qué información representa.</p><div class="import-type-picker import-type-picker-visual">${Object.entries(tipos).map(([clave, tipo], indice) => `<label><input type="radio" name="importTipo" value="${clave}" ${indice === 0 ? 'checked' : ''}><strong>${tipo.titulo}</strong><small>${tipo.descripcion}</small></label>`).join('')}</div>`);
+
+    let hojas = [];
+    let hojaActual = 0;
+    let cabeceras = [];
+    let filas = [];
+    let resultadoValidacion = false;
+    const tipoSeleccionado = () => document.querySelector('input[name="importTipo"]:checked')?.value || 'residentes';
+    const archivoSeleccionado = () => input.files[0];
+    const etiquetaHoja = hoja => `${hoja.nombre}${hoja.oculta ? ' (oculta)' : ''}`;
+    const datosArchivo = (accion, mapeo = null) => {
+        const datos = new FormData();
+        datos.append('action', accion);
+        datos.append('tipo', tipoSeleccionado());
+        datos.append('sheet_index', String(hojaActual));
+        if (mapeo) datos.append('mapping', JSON.stringify(mapeo));
+        datos.append('file', archivoSeleccionado());
+        return datos;
+    };
+    const sugerenciaPara = encabezado => {
+        const normalizado = normalizarImportacion(encabezado);
+        return tipos[tipoSeleccionado()].campos.find(([campo]) => (sinonimos[campo] || [campo]).some(alias => {
+            const candidato = normalizarImportacion(alias);
+            return normalizado === candidato || normalizado.includes(candidato);
+        }))?.[0] || '';
+    };
+    const modal = () => document.getElementById('modalMapeoImportacionVisual');
+    const cerrarModal = () => modal()?.classList.add('hidden');
+    const mapeoActual = () => {
+        const mapeo = Object.fromEntries(tipos[tipoSeleccionado()].campos.map(([campo]) => [campo, '']));
+        const vistos = new Set();
+        const duplicados = [];
+        modal()?.querySelectorAll('.import-column-map').forEach(selector => {
+            const campo = selector.value;
+            if (!campo) return;
+            if (vistos.has(campo)) duplicados.push(campo);
+            vistos.add(campo);
+            mapeo[campo] = selector.dataset.column;
+        });
+        return { mapeo, duplicados };
+    };
+    const mostrarEstado = (texto, tipo = 'info') => {
+        const destino = modal()?.querySelector('#importVisualStatus');
+        if (destino) destino.innerHTML = texto ? `<p class="import-visual-status ${tipo}">${texto}</p>` : '';
+    };
+    const verificarMapeo = () => {
+        const { mapeo, duplicados } = mapeoActual();
+        if (duplicados.length) {
+            mostrarEstado(`Un dato no puede asignarse a más de una columna: ${escapeHtml(duplicados.join(', '))}.`, 'error');
+            return null;
+        }
+        const faltantes = tipos[tipoSeleccionado()].campos.filter(([, etiqueta]) => etiqueta.includes('*')).filter(([campo]) => mapeo[campo] === '').map(([, etiqueta]) => etiqueta.replace(' *', ''));
+        if (faltantes.length) {
+            mostrarEstado(`Asigna las columnas obligatorias: ${escapeHtml(faltantes.join(', '))}.`, 'error');
+            return null;
+        }
+        return mapeo;
+    };
+    const renderizarModal = () => {
+        let dialogo = modal();
+        if (!dialogo) {
+            document.body.insertAdjacentHTML('beforeend', '<div id="modalMapeoImportacionVisual" class="login-modal import-mapping-modal hidden"></div>');
+            dialogo = modal();
+        }
+        const usados = new Set();
+        const asignaciones = cabeceras.map(encabezado => {
+            const sugerido = sugerenciaPara(encabezado);
+            if (!sugerido || usados.has(sugerido)) return '';
+            usados.add(sugerido);
+            return sugerido;
+        });
+        const opcionesHoja = hojas.map(hoja => `<option value="${Number(hoja.indice)}" ${Number(hoja.indice) === Number(hojaActual) ? 'selected' : ''}>${escapeHtml(etiquetaHoja(hoja))}</option>`).join('');
+        const opcionesCampo = (seleccionado = '') => `<option value="">No importar esta columna</option>${tipos[tipoSeleccionado()].campos.map(([campo, etiqueta]) => `<option value="${campo}" ${campo === seleccionado ? 'selected' : ''}>${escapeHtml(etiqueta)}</option>`).join('')}`;
+        const filasHtml = filas.map((fila, indice) => `<tr><td class="import-row-number">${indice + 2}</td>${cabeceras.map((_, columna) => `<td>${escapeHtml(String(fila[columna] ?? '')) || '<span class="muted">—</span>'}</td>`).join('')}</tr>`).join('');
+        dialogo.innerHTML = `<div class="login-box import-mapping-dialog"><button class="close-btn" type="button" aria-label="Cerrar" onclick="document.getElementById('modalMapeoImportacionVisual').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button><header class="import-mapping-heading"><div><p class="section-kicker">Importación visual</p><h2>${escapeHtml(tipos[tipoSeleccionado()].titulo)}</h2><p>${filas.length} fila(s) de datos en <strong>${escapeHtml(archivoSeleccionado()?.name || '')}</strong>. Selecciona qué representa cada columna antes de validar.</p></div><label>Hoja a importar<select id="importVisualSheet">${opcionesHoja}</select></label></header><div id="importVisualStatus"></div><div class="import-mapping-table-wrap"><table class="import-mapping-table"><thead><tr class="import-mapping-select-row"><th>Fila</th>${cabeceras.map((encabezado, indice) => `<th><label>Relacionar columna<select class="import-column-map" data-column="${indice}" aria-label="Relacionar ${escapeHtml(encabezado || `columna ${indice + 1}`)}">${opcionesCampo(asignaciones[indice])}</select></label></th>`).join('')}</tr><tr class="import-mapping-header-row"><th>#</th>${cabeceras.map((encabezado, indice) => `<th>${escapeHtml(encabezado || `Columna ${indice + 1}`)}</th>`).join('')}</tr></thead><tbody>${filasHtml || `<tr><td colspan="${cabeceras.length + 1}">La hoja no contiene filas de datos.</td></tr>`}</tbody></table></div><footer class="import-mapping-actions"><span>Las filas se muestran completas; desplázate para revisar el contenido.</span><div><button type="button" class="btn btn-ghost" id="btnValidarMapeoVisual">Validar mapeo</button><button type="button" class="btn btn-primary" id="btnProcesarMapeoVisual" disabled>Importar datos</button></div></footer></div>`;
+        dialogo.classList.remove('hidden');
+        dialogo.querySelector('#importVisualSheet').onchange = async evento => {
+            hojaActual = Number(evento.currentTarget.value);
+            await cargarHoja();
+        };
+        dialogo.querySelectorAll('.import-column-map').forEach(selector => selector.onchange = () => {
+            const valor = selector.value;
+            if (valor) dialogo.querySelectorAll('.import-column-map').forEach(otro => { if (otro !== selector && otro.value === valor) otro.value = ''; });
+            resultadoValidacion = false;
+            dialogo.querySelector('#btnProcesarMapeoVisual').disabled = true;
+            mostrarEstado('');
+        });
+        dialogo.querySelector('#btnValidarMapeoVisual').onclick = async () => {
+            const mapeo = verificarMapeo();
+            if (!mapeo) return;
+            const respuesta = await leerRespuestaImportacion(await fetch('api/import.php', { method: 'POST', body: datosArchivo('preview', mapeo) }));
+            if (respuesta.status !== 'success') return mostrarEstado(escapeHtml(respuesta.message || 'No fue posible validar el archivo.'), 'error');
+            const resumen = respuesta.data.summary || {};
+            resultadoValidacion = Number(resumen.errores || 0) === 0 && Number(resumen.validas || 0) > 0;
+            const errores = (respuesta.data.errors || []).map(error => `Fila ${error.fila}: ${escapeHtml(error.mensaje)}`).join('<br>');
+            mostrarEstado(resultadoValidacion ? `Listo para importar: ${Number(resumen.validas || 0)} fila(s) válidas.` : `${Number(resumen.errores || 0)} error(es) encontrados.${errores ? `<br>${errores}` : ''}`, resultadoValidacion ? 'ok' : 'error');
+            dialogo.querySelector('#btnProcesarMapeoVisual').disabled = !resultadoValidacion;
+        };
+        dialogo.querySelector('#btnProcesarMapeoVisual').onclick = async () => {
+            const mapeo = verificarMapeo();
+            if (!mapeo || !resultadoValidacion) return;
+            if (!await confirmarAccion({ titulo: '¿Importar datos?', texto: 'Se procesarán únicamente las filas validadas con el mapeo seleccionado.', confirmar: 'Importar datos', icono: 'question' })) return;
+            const boton = dialogo.querySelector('#btnProcesarMapeoVisual');
+            boton.disabled = true;
+            const respuesta = await leerRespuestaImportacion(await fetch('api/import.php', { method: 'POST', body: datosArchivo('process', mapeo) }));
+            window.notificar(respuesta.message, respuesta.status === 'success' ? 'success' : 'error');
+            if (respuesta.status === 'success') {
+                input.value = '';
+                cabeceras = [];
+                filas = [];
+                hojas = [];
+                resultadoValidacion = false;
+                cerrarModal();
+            } else boton.disabled = false;
+        };
+    };
+    const cargarHoja = async () => {
+        if (!archivoSeleccionado()) return;
+        const respuesta = await leerRespuestaImportacion(await fetch('api/import.php', { method: 'POST', body: datosArchivo('get_headers') }));
+        if (respuesta.status !== 'success') return window.notificar(respuesta.message || 'No fue posible leer la hoja.', 'error');
+        cabeceras = respuesta.data.headers || [];
+        filas = respuesta.data.raw_rows || [];
+        resultadoValidacion = false;
+        renderizarModal();
+    };
+    input.onchange = async () => {
+        const archivo = archivoSeleccionado();
+        if (!archivo) return;
+        const datos = new FormData();
+        datos.append('action', 'get_sheets');
+        datos.append('tipo', tipoSeleccionado());
+        datos.append('file', archivo);
+        const respuesta = await leerRespuestaImportacion(await fetch('api/import.php', { method: 'POST', body: datos }));
+        if (respuesta.status !== 'success') return window.notificar(respuesta.message || 'No fue posible leer el archivo.', 'error');
+        hojas = respuesta.data.sheets || [];
+        hojaActual = Number(hojas[0]?.indice || 0);
+        await cargarHoja();
+    };
+    document.querySelectorAll('input[name="importTipo"]').forEach(radio => radio.onchange = () => {
+        input.value = '';
+        hojas = [];
+        cabeceras = [];
+        filas = [];
+        resultadoValidacion = false;
+        cerrarModal();
+    });
+};
