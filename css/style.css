@@ -6147,3 +6147,107 @@ hr {
         animation: none;
     }
 }
+
+
+/* Editor de zonas: diálogo amplio con cabecera fija y formulario desplazable. */
+.zone-editor.zone-editor-modal {
+    position: fixed;
+    z-index: 12000;
+    inset: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    justify-items: center;
+    align-items: center;
+    gap: 0;
+    margin: 0;
+    padding: 24px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    background: rgba(15, 23, 42, .58);
+    box-shadow: none;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+.zone-editor-modal .zone-editor-header,
+.zone-editor-modal .zone-editor-form {
+    width: min(940px, 100%);
+    background: #fff;
+}
+
+.zone-editor-modal .zone-editor-header {
+    align-self: end;
+    margin: 0;
+    padding: 24px 28px 20px;
+    border: 0;
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -12px 42px rgba(15, 23, 42, .18);
+}
+
+.zone-editor-modal .zone-editor-form {
+    align-self: start;
+    max-height: min(66dvh, 690px);
+    margin: 0;
+    padding: 20px 28px 28px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 0 0 20px 20px;
+    box-shadow: 0 22px 42px rgba(15, 23, 42, .18);
+    scrollbar-width: thin;
+}
+
+.zone-editor-modal .zone-editor-actions {
+    position: sticky;
+    bottom: -28px;
+    margin: 0 -28px -28px;
+    padding: 16px 28px;
+    border-top: 1px solid #e2e8f0;
+    background: rgba(255, 255, 255, .97);
+}
+
+.zone-editor-modal input[type="time"],
+.internal-reservation-time-grid input[type="time"],
+.reserva-solicitud-form input[type="time"] {
+    min-height: 43px;
+    appearance: auto;
+    -webkit-appearance: auto;
+}
+
+@media (max-width: 640px) {
+    .zone-editor.zone-editor-modal {
+        padding: 12px;
+    }
+
+    .zone-editor-modal .zone-editor-header {
+        padding: 20px 18px 16px;
+    }
+
+    .zone-editor-modal .zone-editor-header h2 {
+        font-size: 20px;
+    }
+
+    .zone-editor-modal .zone-editor-form {
+        max-height: calc(100dvh - 150px);
+        padding: 16px 18px 22px;
+    }
+
+    .zone-editor-modal .zone-editor-grid,
+    .zone-editor-modal .zone-editor-grid-basic,
+    .zone-editor-modal .zone-editor-schedule-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .zone-editor-modal .zone-editor-actions {
+        align-items: stretch;
+        flex-direction: column;
+        bottom: -22px;
+        margin: 0 -18px -22px;
+        padding: 14px 18px;
+    }
+
+    .zone-editor-modal .zone-editor-actions>div,
+    .zone-editor-modal .zone-editor-actions .btn {
+        width: 100%;
+    }
+}

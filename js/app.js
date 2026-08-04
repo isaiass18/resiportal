@@ -2618,6 +2618,7 @@ function horaInicialDesdeClick(info, horario) {
 }
 
 function configurarFormularioZona() {
+    prepararEditorZonaModal();
     const form = document.getElementById('formCrearZona');
     if (!form || currentUser?.rol !== 'admin') return;
     form.onsubmit = async event => {
@@ -3259,28 +3260,33 @@ function opcionesHorasAMPM(valorActual = '') {
     return opciones.join('');
 }
 
-function convertirControlHoraAMPM(control) {
-    if (!control) return null;
-    const valor = horaCorta(control.value);
-    if (control.tagName === 'SELECT') {
-        control.innerHTML = opcionesHorasAMPM(valor);
-        control.value = valor;
-        return control;
-    }
-    const selector = document.createElement('select');
+// Los formularios siempre usan el selector nativo de hora del dispositivo. Esta función
+// también normaliza cualquier select AM/PM que haya quedado en una vista abierta antes
+// de actualizar el portal.
+function convertirControlHoraNativo(control) {
+    if (!control || control.tagName !== 'SELECT') return control || null;
+    const input = document.createElement('input');
     [...control.attributes].forEach(atributo => {
-        if (atributo.name !== 'type' && atributo.name !== 'value') selector.setAttribute(atributo.name, atributo.value);
+        if (!['type', 'value', 'class'].includes(atributo.name)) input.setAttribute(atributo.name, atributo.value);
     });
-    selector.classList.add('time-ampm-select');
-    selector.innerHTML = opcionesHorasAMPM(valor);
-    selector.value = valor;
-    control.replaceWith(selector);
-    return selector;
+    const clases = [...control.classList].filter(clase => clase !== 'time-ampm-select');
+    if (clases.length) input.className = clases.join(' ');
+    input.type = 'time';
+    input.value = horaCorta(control.value);
+    control.replaceWith(input);
+    return input;
 }
 
 function prepararSelectoresHoraAMPM(contexto = document) {
-    ['zonaHoraApertura', 'zonaHoraCierre', 'reservaHoraInicio', 'reservaHoraFin'].forEach(id => convertirControlHoraAMPM(contexto.querySelector?.(`#${id}`)));
-    contexto.querySelectorAll?.('input[type="time"][name="hora_inicio"], input[type="time"][name="hora_fin"], select.time-ampm-select[name="hora_inicio"], select.time-ampm-select[name="hora_fin"]').forEach(convertirControlHoraAMPM);
+    contexto.querySelectorAll?.('select.time-ampm-select').forEach(convertirControlHoraNativo);
+}
+
+function prepararEditorZonaModal() {
+    const modal = document.getElementById('modalZona');
+    if (!modal) return;
+    modal.classList.add('zone-editor-modal');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
 }
 
 function actualizarHorariosVisibles() {
