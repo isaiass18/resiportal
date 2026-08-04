@@ -91,6 +91,54 @@ if ($action === 'guardar_inmueble') {
     responseJSON('success', 'Inmueble creado', ['id' => (int) $pdo->lastInsertId()]);
 }
 
+function activoGestionable(PDO $pdo, string $tabla, int $activoId, int $conjuntoId, int $userId, string $rol): ?array
+{
+    if (!in_array($tabla, ['vehiculos', 'mascotas'], true)) return null;
+    $sql = "SELECT a.*, i.id AS inmueble_id FROM $tabla a JOIN inmuebles i ON i.id = a.inmueble_id WHERE a.id = ? AND i.conjunto_id = ?";
+    $params = [$activoId, $conjuntoId];
+    if ($rol !== 'admin') {
+        if (!in_array($rol, ['residente', 'propietario'], true)) return null;
+        $sql .= ' AND EXISTS (SELECT 1 FROM relacion_inmuebles_usuarios r WHERE r.inmueble_id = i.id AND r.usuario_id = ?)';
+        $params[] = $userId;
+    }
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetch() ?: null;
+}
+
+if ($action === 'actualizar_vehiculo') {
+    $id = (int) ($_POST['vehiculo_id'] ?? 0);
+    $vehiculo = activoGestionable($pdo, 'vehiculos', $id, $conjuntoId, $userId, $rol);
+    $placa = strtoupper(trim($_POST['placa'] ?? ''));
+    $tipo = trim($_POST['tipo'] ?? '');
+    if (!$vehiculo || $placa === '' || $tipo === '') responseJSON('error', 'Vehículo no encontrado o datos incompletos');
+    if (mb_strlen($placa) > 20 || mb_strlen($tipo) > 50 || mb_strlen(trim($_POST['marca'] ?? '')) > 50 || mb_strlen(trim($_POST['linea'] ?? '')) > 50) responseJSON('error', 'La información del vehículo excede la longitud permitida');
+    $stmt = $pdo->prepare('UPDATE vehiculos SET placa = ?, tipo = ?, marca = ?, linea = ? WHERE id = ?');
+    $stmt->execute([$placa, $tipo, trim($_POST['marca'] ?? '') ?: null, trim($_POST['linea'] ?? '') ?: null, $id]);
+    responseJSON('success', 'Vehículo actualizado correctamente');
+}
+if ($action === 'eliminar_vehiculo') {
+    $id = (int) ($_POST['vehiculo_id'] ?? 0);
+    if (!activoGestionable($pdo, 'vehiculos', $id, $conjuntoId, $userId, $rol)) responseJSON('error', 'Vehículo no encontrado o sin permisos');
+    $pdo->prepare('DELETE FROM vehiculos WHERE id = ?')->execute([$id]);
+    responseJSON('success', 'Vehículo eliminado correctamente');
+}
+if ($action === 'actualizar_mascota') {
+    $id = (int) ($_POST['mascota_id'] ?? 0);
+    $mascota = activoGestionable($pdo, 'mascotas', $id, $conjuntoId, $userId, $rol);
+    $descripcion = trim($_POST['descripcion'] ?? '');
+    if (!$mascota || $descripcion === '') responseJSON('error', 'Mascota no encontrada o descripción incompleta');
+    if (mb_strlen($descripcion) > 5000) responseJSON('error', 'La descripción de la mascota es demasiado extensa');
+    $pdo->prepare('UPDATE mascotas SET descripcion = ? WHERE id = ?')->execute([$descripcion, $id]);
+    responseJSON('success', 'Mascota actualizada correctamente');
+}
+if ($action === 'eliminar_mascota') {
+    $id = (int) ($_POST['mascota_id'] ?? 0);
+    if (!activoGestionable($pdo, 'mascotas', $id, $conjuntoId, $userId, $rol)) responseJSON('error', 'Mascota no encontrada o sin permisos');
+    $pdo->prepare('DELETE FROM mascotas WHERE id = ?')->execute([$id]);
+    responseJSON('success', 'Mascota eliminada correctamente');
+}
+
 if ($action === 'mis_vehiculos' || $action === 'mis_mascotas') {
     $inmuebleId = getInmuebleId($pdo, $userId);
     if (!$inmuebleId) responseJSON('success', '', []);

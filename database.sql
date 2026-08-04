@@ -187,14 +187,32 @@ CREATE TABLE IF NOT EXISTS reclamaciones (
         'en_progreso',
         'cerrado'
     ) DEFAULT 'abierto',
+    solucion TEXT NULL,
+    resuelto_por INT NULL,
+    resuelto_en DATETIME NULL,
     creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (conjunto_id) REFERENCES conjuntos (id) ON DELETE CASCADE,
-    FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
+    FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE,
+    FOREIGN KEY (resuelto_por) REFERENCES usuarios (id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS reclamacion_notas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    reclamacion_id INT NOT NULL,
+    autor_id INT NOT NULL,
+    contenido TEXT NOT NULL,
+    es_solucion TINYINT(1) NOT NULL DEFAULT 0,
+    creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_reclamacion_notas_cronologia (reclamacion_id, creado_en),
+    FOREIGN KEY (reclamacion_id) REFERENCES reclamaciones (id) ON DELETE CASCADE,
+    FOREIGN KEY (autor_id) REFERENCES usuarios (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS reclamacion_adjuntos (
     id INT AUTO_INCREMENT PRIMARY KEY,
     reclamacion_id INT NOT NULL,
+    nota_id INT NULL,
     nombre_original VARCHAR(255) NOT NULL,
     archivo VARCHAR(255) NOT NULL,
     mime VARCHAR(100) NOT NULL,
@@ -202,7 +220,9 @@ CREATE TABLE IF NOT EXISTS reclamacion_adjuntos (
     subido_por INT NULL,
     creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     KEY idx_reclamacion_adjuntos_reclamacion (reclamacion_id),
+    KEY idx_reclamacion_adjuntos_nota (nota_id),
     FOREIGN KEY (reclamacion_id) REFERENCES reclamaciones (id) ON DELETE CASCADE,
+    FOREIGN KEY (nota_id) REFERENCES reclamacion_notas (id) ON DELETE CASCADE,
     FOREIGN KEY (subido_por) REFERENCES usuarios (id) ON DELETE SET NULL
 );
 

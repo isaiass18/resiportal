@@ -3699,13 +3699,23 @@ document.addEventListener('submit', async event => {
     if (form.id !== 'formCrearUsuario') return;
     event.preventDefault();
     event.stopPropagation();
+    const boton = form.querySelector('[type="submit"]');
+    if (boton?.dataset.enviando === '1') return;
+    if (boton) { boton.dataset.enviando = '1'; boton.disabled = true; }
     const datos = new FormData();
     [['action', document.getElementById('usrId').value ? 'update' : 'crear_usuario'], ['id', document.getElementById('usrId').value], ['documento', document.getElementById('usrDoc').value], ['nombre', document.getElementById('usrNombre').value], ['email', document.getElementById('usrEmail').value], ['password', document.getElementById('usrPass').value], ['rol', document.getElementById('usrRol').value], ['inmueble_id', document.getElementById('usrInmuebleId').value]].forEach(([nombre, valor]) => datos.append(nombre, valor));
     if (document.getElementById('usrSinAcceso').checked) datos.append('sin_acceso', '1');
-    const respuesta = await fetch('api/users.php', { method: 'POST', body: datos });
-    const resultado = await respuesta.json();
-    window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
-    if (resultado.status === 'success') { document.getElementById('modalUsuario').classList.add('hidden'); await loadUsuarios(); }
+    try {
+        const respuesta = await fetch('api/users.php', { method: 'POST', body: datos });
+        const resultado = await respuesta.json();
+        window.notificar(resultado.message || 'No fue posible guardar el usuario.', resultado.status === 'success' ? 'success' : 'error');
+        if (resultado.status === 'success') { document.getElementById('modalUsuario').classList.add('hidden'); await loadUsuarios(); }
+    } catch (error) {
+        console.error('Error guardando usuario', error);
+        window.notificar('No fue posible comunicarse con el servidor al guardar el usuario.', 'error');
+    } finally {
+        if (boton) { boton.disabled = false; delete boton.dataset.enviando; }
+    }
 }, true);
 
 loadInmuebles = async function () {
@@ -4020,3 +4030,377 @@ function agregarOjoContrasena(input) {
 function prepararOjosContrasena(nodo = document) { nodo.querySelectorAll?.('input[type="password"]').forEach(agregarOjoContrasena); }
 prepararOjosContrasena();
 new MutationObserver(registros => registros.forEach(registro => registro.addedNodes.forEach(nodo => { if (nodo.nodeType === Node.ELEMENT_NODE) { if (nodo.matches?.('input[type="password"]')) agregarOjoContrasena(nodo); prepararOjosContrasena(nodo); } }))).observe(document.body, { childList: true, subtree: true });
+
+
+/* Consolidación operativa 2026-08-11: una capa final para los flujos críticos. */
+const cargarZonasConModalResidenteBase = loadZonas;
+const cargarMisPagosConSoportesBase = loadMisPagos;
+const cargarFinanzasConSoportesBase = window.loadFinanzas || loadFinanzas;
+const cargarComunicacionesModalBase = window.loadComunicaciones || loadComunicaciones;
+const cargarInicioResidenteActivosBase = loadHomeResidente;
+const abrirVigilanteConAccionBase = window.abrirModalVigilante;
+const verificarSesionConMarcaBase = checkAuth;
+
+function enlaceSoportePago(pago) {
+    return pago?.soporte_archivo
+        ? `<a class="payment-support-link" href="api/finanzas.php?action=ver_soporte&pago_id=${Number(pago.id)}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip"></i> Ver soporte</a>`
+        : '<span class="muted">—</span>';
+}
+
+async function aplicarMarcaPortal() {
+    try {
+        const respuesta = await fetch('api/conjuntos.php?action=public_config', { cache: 'no-store' });
+        const resultado = await respuesta.json();
+        if (resultado.status !== 'success') return;
+        const marca = resultado.data || {};
+        const nombre = String(marca.nombre || 'ResiPortal');
+        const logo = String(marca.logo_url || '');
+        document.title = `${nombre} · Portal residencial`;
+        document.querySelectorAll('.public-nav .logo, .sidebar .logo').forEach(contenedor => {
+            contenedor.innerHTML = logo
+                ? `<img class="conjunto-brand-logo" src="${escapeHtml(logo)}" alt="Logo de ${escapeHtml(nombre)}"><span>${escapeHtml(nombre)}</span>`
+                : '<i class="fa-solid fa-building-user" aria-hidden="true"></i><span></span>';
+            contenedor.querySelector('span').textContent = nombre;
+        });
+        document.querySelectorAll('.page-title').forEach(titulo => {
+            if (/Bienvenido a ResiPortal/i.test(titulo.textContent)) titulo.textContent = `Bienvenido a ${nombre}`;
+        });
+        let favicon = document.getElementById('app-favicon');
+        if (!favicon) {
+            favicon = document.createElement('link');
+            favicon.id = 'app-favicon';
+            favicon.rel = 'icon';
+            document.head.appendChild(favicon);
+        }
+        favicon.href = logo || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"%3E%3Crect width="64" height="64" rx="14" fill="%234f46e5"/%3E%3Cpath fill="white" d="M14 51V22l18-9 18 9v29H14zm8-8h6v-9h8v9h6V26l-10-5-10 5v17z"/%3E%3C/svg%3E';
+    } catch (error) {
+        console.warn('No fue posible cargar la marca del conjunto.', error);
+    }
+}
+
+checkAuth = async function () {
+    await verificarSesionConMarcaBase();
+    await aplicarMarcaPortal();
+};
+
+window.abrirModalVigilante = function (...argumentos) {
+    abrirVigilanteConAccionBase?.(...argumentos);
+    const form = document.getElementById('formVigilante');
+    if (form && !form.querySelector('[name="action"]')) {
+        form.insertAdjacentHTML('afterbegin', '<input type="hidden" name="action" value="guardar_vigilante">');
+    }
+};
+
+function prepararPanelReservaResidente() {
+    const panel = document.getElementById('panelReservarZona');
+    const selector = document.getElementById('reservaZonaId');
+    if (!panel || !selector) return;
+    const etiqueta = document.createElement('label');
+    etiqueta.className = 'resident-zone-select';
+    etiqueta.innerHTML = '<span>Zona social</span>';
+    etiqueta.appendChild(selector);
+    panel.replaceChildren(etiqueta);
+    selector.onchange = () => renderDisponibilidadResidente();
+}
+
+window.abrirReservaResidente = function (fecha, hora) {
+    const selector = document.getElementById('reservaZonaId');
+    const zona = zonasReservaActuales.find(item => Number(item.id) === Number(selector?.value));
+    if (!zona) return window.notificar('Selecciona una zona antes de elegir una franja.', 'warning');
+    if (!inmueblesReservaActuales.length) return window.notificar('No tienes un apartamento o casa asociado para reservar.', 'error');
+    let modal = document.getElementById('modalReservaResidente');
+    if (!modal) {
+        document.body.insertAdjacentHTML('beforeend', '<div id="modalReservaResidente" class="login-modal internal-reservation-modal hidden"></div>');
+        modal = document.getElementById('modalReservaResidente');
+    }
+    const variosInmuebles = inmueblesReservaActuales.length > 1;
+    const inmuebleUnico = inmueblesReservaActuales[0];
+    const campoInmueble = variosInmuebles
+        ? `<label>Apartamento o casa<select name="inmueble_id" required><option value="">Selecciona el inmueble…</option>${inmueblesReservaActuales.map(inmueble => `<option value="${Number(inmueble.id)}">${escapeHtml(inmueble.etiqueta)}</option>`).join('')}</select></label>`
+        : `<input type="hidden" name="inmueble_id" value="${Number(inmuebleUnico.id)}"><p class="reservation-unit-note"><i class="fa-solid fa-house"></i> Reserva para ${escapeHtml(inmuebleUnico.etiqueta)}</p>`;
+    modal.innerHTML = `<div class="login-box internal-reservation-dialog"><button class="close-btn" type="button" onclick="document.getElementById('modalReservaResidente').classList.add('hidden')" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button><p class="section-kicker">Reserva de zona</p><h2>${escapeHtml(zona.nombre)}</h2><p class="muted">Confirma la franja. Si sigue disponible, se aprobará automáticamente.</p><form id="formReservaResidenteModal" class="internal-reservation-form">${campoInmueble}<div class="internal-reservation-time-grid"><label>Fecha<input name="fecha_reserva" type="date" min="${fechaMinimaReserva()}" value="${fecha}" required></label><label>Inicio<input name="hora_inicio" type="time" value="${hora}" required></label><label>Fin<input name="hora_fin" type="time" required></label></div><button class="btn btn-primary" type="submit"><i class="fa-solid fa-calendar-check"></i> Confirmar reserva</button></form></div>`;
+    const form = modal.querySelector('form');
+    const inicio = form.elements.hora_inicio;
+    const fin = form.elements.hora_fin;
+    completarFinReservaResidente(inicio, zona, fin);
+    inicio.addEventListener('change', () => completarFinReservaResidente(inicio, zona, fin));
+    form.onsubmit = async evento => {
+        evento.preventDefault();
+        const boton = form.querySelector('[type="submit"]');
+        boton.disabled = true;
+        const datos = new FormData(form);
+        datos.append('action', 'crear_reserva');
+        datos.append('zona_id', zona.id);
+        try {
+            const respuesta = await fetch('api/zonas.php', { method: 'POST', body: datos });
+            const resultado = await respuesta.json();
+            window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+            if (resultado.status === 'success') {
+                modal.classList.add('hidden');
+                await loadZonas();
+            }
+        } finally {
+            boton.disabled = false;
+        }
+    };
+    modal.classList.remove('hidden');
+};
+
+renderDisponibilidadResidente = async function () {
+    const selector = document.getElementById('reservaZonaId');
+    const zona = zonasReservaActuales.find(item => Number(item.id) === Number(selector?.value));
+    let calendario = document.getElementById('calendar-disponibilidad-residente');
+    if (!selector || !window.FullCalendar) return;
+    if (!calendario) {
+        calendario = document.createElement('section');
+        calendario.id = 'calendar-disponibilidad-residente';
+        calendario.className = 'resident-zone-calendar';
+        document.getElementById('calendar')?.closest('.card')?.insertAdjacentElement('beforebegin', calendario);
+    }
+    if (!zona) {
+        calendario.innerHTML = '<p class="muted">Selecciona una zona para consultar sus horarios disponibles.</p>';
+        return;
+    }
+    const horario = horarioServicioZona(zona);
+    if (!horario) {
+        calendario.innerHTML = '<p class="empty-state">La zona no tiene un horario de servicio válido.</p>';
+        return;
+    }
+    calendario.innerHTML = `<div class="resident-availability-header"><div><p class="section-kicker">Disponibilidad por horas</p><h3>Agenda: ${escapeHtml(zona.nombre)}</h3><p>Elige una franja verde. Solo verás disponibilidad, nunca quién reservó.</p></div>${leyendaHorarioCalendario()}</div><div class="resident-zone-calendar-body"></div>`;
+    const cuerpo = calendario.querySelector('.resident-zone-calendar-body');
+    try {
+        const respuesta = await fetch(`api/zonas.php?action=zona_disponibilidad&zona_id=${encodeURIComponent(zona.id)}`, { cache: 'no-store' });
+        const resultado = await respuesta.json();
+        if (resultado.status !== 'success') throw new Error(resultado.message);
+        if (window.residentAvailabilityCalendar) window.residentAvailabilityCalendar.destroy();
+        window.residentAvailabilityCalendar = new FullCalendar.Calendar(cuerpo, {
+            initialView: 'timeGridWeek', locale: 'es', height: 'auto',
+            headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' },
+            ...opcionesCalendarioHorario(zona),
+            events: (resultado.data.reservas || []).map(reserva => ({
+                id: String(reserva.id || ''), title: 'Ocupado', start: `${reserva.fecha_reserva}T${reserva.hora_inicio || '00:00'}`,
+                end: reserva.hora_fin ? `${reserva.fecha_reserva}T${reserva.hora_fin}` : undefined, classNames: ['zona-calendar-reserva'], editable: false
+            })),
+            dateClick: info => {
+                const fecha = fechaLocal(info.date);
+                if (fecha < fechaMinimaReserva()) return window.notificar('Selecciona una fecha futura para reservar.', 'warning');
+                const hora = info.allDay ? horario.apertura : horaInicialDesdeClick(info, horario);
+                if (!info.allDay && !momentoEnHorarioServicio(info.date, horario)) return window.notificar(`La zona está fuera de servicio: ${formatearHorarioServicio(horario)}.`, 'warning');
+                window.abrirReservaResidente(fecha, hora);
+            }
+        });
+        window.residentAvailabilityCalendar.render();
+    } catch (error) {
+        cuerpo.innerHTML = `<p class="muted">${escapeHtml(error.message || 'No fue posible cargar la disponibilidad.')}</p>`;
+    }
+};
+
+loadZonas = async function () {
+    await cargarZonasConModalResidenteBase();
+    if (!['residente', 'propietario'].includes(currentUser?.rol)) return;
+    prepararPanelReservaResidente();
+    await renderDisponibilidadResidente();
+};
+
+window.cancelarMiReserva = async function (reservaId) {
+    const confirmar = await confirmarAccion({ titulo: '¿Cancelar reserva?', texto: 'La franja volverá a estar disponible; el registro permanecerá en el historial.', confirmar: 'Cancelar reserva', icono: 'warning' });
+    if (!confirmar) return;
+    const datos = new FormData();
+    datos.append('action', 'cancelar_reserva');
+    datos.append('reserva_id', reservaId);
+    const respuesta = await fetch('api/zonas.php', { method: 'POST', body: datos });
+    const resultado = await respuesta.json();
+    window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+    if (resultado.status === 'success') await loadZonas();
+};
+
+loadMisPagos = async function () {
+    await cargarMisPagosConSoportesBase();
+    const respuesta = await fetch('api/finanzas.php?action=mis_pagos');
+    const resultado = await respuesta.json();
+    const tabla = document.getElementById('tb-mis-pagos');
+    if (!tabla || resultado.status !== 'success') return;
+    const cabecera = tabla.closest('table')?.querySelector('thead tr');
+    if (cabecera) cabecera.innerHTML = '<th>Fecha</th><th>Valor</th><th>Método</th><th>Referencia / descripción</th><th>Soporte</th><th>Estado</th>';
+    const pagos = resultado.data?.historial || [];
+    tabla.innerHTML = pagos.length ? pagos.map(pago => `<tr><td>${escapeHtml(pago.fecha_pago)}</td><td>${formatCurrency(pago.valor)}</td><td>${escapeHtml(pago.metodo_pago)}</td><td>${escapeHtml(pago.referencia || '—')}<br><small>${escapeHtml(pago.descripcion || 'Sin descripción')}</small></td><td>${enlaceSoportePago(pago)}</td><td><span class="reserva-estado estado-${escapeHtml(pago.estado)}">${escapeHtml(pago.estado)}</span></td></tr>`).join('') : '<tr><td colspan="6">No has reportado pagos.</td></tr>';
+};
+
+loadFinanzas = window.loadFinanzas = async function () {
+    await cargarFinanzasConSoportesBase();
+    const [pendientesR, historialR] = await Promise.all([fetch('api/finanzas.php?action=pagos_pendientes'), fetch('api/finanzas.php?action=historial_pagos')]);
+    const [pendientes, historial] = await Promise.all([pendientesR.json(), historialR.json()]);
+    const tablaPendientes = document.getElementById('tb-pagos-pendientes');
+    if (tablaPendientes && pendientes.status === 'success') {
+        const cabecera = tablaPendientes.closest('table')?.querySelector('thead tr');
+        if (cabecera) cabecera.innerHTML = '<th>Apto</th><th>Residente</th><th>Valor</th><th>Referencia</th><th>Soporte</th><th>Acciones</th>';
+        tablaPendientes.innerHTML = pendientes.data.length ? pendientes.data.map(pago => `<tr><td>${escapeHtml([pago.torre, pago.nomenclatura || pago.apartamento].filter(Boolean).join(' · '))}</td><td>${escapeHtml(pago.residente || '—')}</td><td>${formatCurrency(pago.valor)}</td><td>${escapeHtml(pago.referencia || '—')}<br><small>${escapeHtml(pago.descripcion || '')}</small></td><td>${enlaceSoportePago(pago)}</td><td class="finance-action-cell"><button class="btn btn-primary" type="button" onclick="aprobarPago(${Number(pago.id)}, 'aprobado')">Aprobar</button><button class="btn btn-ghost" type="button" style="color:#dc2626" onclick="aprobarPago(${Number(pago.id)}, 'rechazado')">Rechazar</button></td></tr>`).join('') : '<tr><td colspan="6">No hay pagos pendientes de aprobación.</td></tr>';
+    }
+    const tablaHistorial = document.getElementById('tb-historial-pagos');
+    if (tablaHistorial && historial.status === 'success') {
+        const cabecera = tablaHistorial.closest('table')?.querySelector('thead tr');
+        if (cabecera) cabecera.innerHTML = '<th>Fecha</th><th>Apto</th><th>Valor</th><th>Método</th><th>Descripción</th><th>Soporte</th><th>Registrado por</th>';
+        tablaHistorial.innerHTML = historial.data.length ? historial.data.map(pago => `<tr><td>${escapeHtml(pago.fecha_pago)}</td><td>${escapeHtml([pago.torre, pago.nomenclatura || pago.apartamento].filter(Boolean).join(' · '))}</td><td>${formatCurrency(pago.valor)}</td><td>${escapeHtml(pago.metodo_pago)}</td><td>${escapeHtml(pago.descripcion || pago.referencia || '—')}</td><td>${enlaceSoportePago(pago)}</td><td>${escapeHtml(pago.registrado_por_nombre || '—')}</td></tr>`).join('') : '<tr><td colspan="7">No hay pagos registrados.</td></tr>';
+    }
+};
+
+function normalizarModalContenido(id) {
+    const modal = document.getElementById(id);
+    if (!modal || modal.dataset.normalizado === '1') return;
+    modal.dataset.normalizado = '1';
+    modal.className = 'login-modal content-management-modal hidden';
+    const contenido = modal.innerHTML;
+    modal.innerHTML = `<div class="login-box content-management-dialog">${contenido}</div>`;
+}
+
+window.loadComunicaciones = async function () {
+    normalizarModalContenido('modalEvento');
+    normalizarModalContenido('modalComunicado');
+    await cargarComunicacionesModalBase();
+    document.querySelectorAll('[data-content-modal]').forEach(boton => boton.onclick = () => prepararModalContenido(boton.dataset.contentModal));
+    [...document.querySelectorAll('button')].forEach(boton => {
+        if (boton.textContent.includes('Nuevo Evento')) boton.onclick = () => prepararModalContenido('evento');
+        if (boton.textContent.includes('Publicar novedad')) boton.onclick = () => prepararModalContenido('comunicado');
+    });
+};
+loadComunicaciones = window.loadComunicaciones;
+
+function adjuntosPQRSHtml(adjuntos = []) {
+    if (!adjuntos.length) return '<span class="muted">Sin adjuntos</span>';
+    return `<div class="pqrs-detail-files">${adjuntos.map(adjunto => `<a href="api/reclamaciones.php?action=ver_adjunto&adjunto_id=${Number(adjunto.id)}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip"></i> ${escapeHtml(adjunto.nombre_original)}</a>`).join('')}</div>`;
+}
+
+window.abrirDetalleReclamacion = async function (reclamacionId) {
+    const respuesta = await fetch(`api/reclamaciones.php?action=detalle&reclamacion_id=${encodeURIComponent(reclamacionId)}`);
+    const resultado = await respuesta.json();
+    if (resultado.status !== 'success') return window.notificar(resultado.message, 'error');
+    const { reclamacion, adjuntos = [], notas = [] } = resultado.data;
+    let modal = document.getElementById('modalDetallePQRS');
+    if (!modal) {
+        document.body.insertAdjacentHTML('beforeend', '<div id="modalDetallePQRS" class="login-modal pqrs-detail-modal hidden"></div>');
+        modal = document.getElementById('modalDetallePQRS');
+    }
+    const esAdmin = currentUser?.rol === 'admin';
+    const timeline = notas.length ? notas.map(nota => `<article class="pqrs-timeline-item ${Number(nota.es_solucion) ? 'is-solution' : ''}"><header><strong>${escapeHtml(nota.autor)}</strong><span>${escapeHtml(nota.autor_rol)} · ${escapeHtml(nota.creado_en)}</span></header><p>${escapeHtml(nota.contenido)}</p>${adjuntosPQRSHtml(nota.adjuntos)}</article>`).join('') : '<p class="muted">Aún no hay notas de seguimiento.</p>';
+    const controlAdmin = esAdmin ? `<form id="formEstadoPQRS" class="pqrs-admin-form"><label>Estado<select name="estado"><option value="abierto" ${reclamacion.estado === 'abierto' ? 'selected' : ''}>Abierto</option><option value="en_progreso" ${reclamacion.estado === 'en_progreso' ? 'selected' : ''}>En progreso</option><option value="cerrado" ${reclamacion.estado === 'cerrado' ? 'selected' : ''}>Cerrado / solucionado</option></select></label><label>Solución final<textarea name="solucion" placeholder="Obligatoria para cerrar el caso">${escapeHtml(reclamacion.solucion || '')}</textarea></label><button class="btn btn-primary" type="submit">Actualizar seguimiento</button></form>` : `<form id="formNotaPQRS" class="pqrs-note-form" enctype="multipart/form-data"><h3>Agregar información</h3><textarea name="contenido" required placeholder="Escribe una aclaración o avance para administración"></textarea><label class="pqrs-file-field">Capturas o adjuntos<input name="adjuntos[]" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,.mp4,.webm,.mov"><small>Máximo cinco archivos por nota.</small></label><button class="btn btn-primary" type="submit">Agregar nota</button></form>`;
+    modal.innerHTML = `<div class="login-box pqrs-detail-dialog"><button class="close-btn" type="button" onclick="document.getElementById('modalDetallePQRS').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button><header class="pqrs-detail-heading"><p class="section-kicker">PQRS #${Number(reclamacion.id)}</p><h2>${escapeHtml(reclamacion.asunto)}</h2><p>${escapeHtml(reclamacion.categoria || 'General')} · ${escapeHtml(reclamacion.creado_en)}</p><span class="reserva-estado estado-${escapeHtml(reclamacion.estado)}">${escapeHtml(reclamacion.estado)}</span></header><section class="pqrs-original"><h3>Solicitud inicial</h3><p>${escapeHtml(reclamacion.descripcion)}</p>${adjuntosPQRSHtml(adjuntos)}</section><section class="pqrs-timeline"><h3>Seguimiento</h3>${timeline}</section>${controlAdmin}</div>`;
+    const formularioNota = modal.querySelector('#formNotaPQRS');
+    if (formularioNota) formularioNota.onsubmit = async evento => {
+        evento.preventDefault(); const datos = new FormData(formularioNota); datos.append('action', 'agregar_nota'); datos.append('reclamacion_id', reclamacionId);
+        const r = await fetch('api/reclamaciones.php', { method: 'POST', body: datos }); const d = await r.json();
+        window.notificar(d.message, d.status === 'success' ? 'success' : 'error'); if (d.status === 'success') { await loadReclamaciones(); window.abrirDetalleReclamacion(reclamacionId); }
+    };
+    const formularioEstado = modal.querySelector('#formEstadoPQRS');
+    if (formularioEstado) formularioEstado.onsubmit = async evento => {
+        evento.preventDefault(); const datos = new FormData(formularioEstado); datos.append('action', 'actualizar_estado'); datos.append('reclamacion_id', reclamacionId);
+        const r = await fetch('api/reclamaciones.php', { method: 'POST', body: datos }); const d = await r.json();
+        window.notificar(d.message, d.status === 'success' ? 'success' : 'error'); if (d.status === 'success') { await loadReclamaciones(); window.abrirDetalleReclamacion(reclamacionId); }
+    };
+    modal.classList.remove('hidden');
+};
+
+loadReclamaciones = async function () {
+    const respuesta = await fetch('api/reclamaciones.php?action=list');
+    const resultado = await respuesta.json();
+    const tabla = document.getElementById('tb-reclamaciones');
+    if (!tabla || resultado.status !== 'success') return resultado.status !== 'success' && window.notificar(resultado.message, 'error');
+    const cabecera = tabla.closest('table')?.querySelector('thead tr');
+    if (cabecera) cabecera.innerHTML = '<th>Asunto</th><th>Usuario</th><th>Fecha</th><th>Estado</th><th>Adjuntos</th><th>Seguimiento</th>';
+    tabla.innerHTML = resultado.data.length ? resultado.data.map(item => `<tr><td><strong>${escapeHtml(item.asunto)}</strong><br><small>${escapeHtml(item.categoria || 'General')}</small></td><td>${escapeHtml(item.usuario_nombre || 'Tú')}</td><td>${escapeHtml(item.creado_en)}</td><td><span class="reserva-estado estado-${escapeHtml(item.estado)}">${escapeHtml(item.estado)}</span></td><td>${item.adjuntos?.length ? `<i class="fa-solid fa-paperclip"></i> ${item.adjuntos.length}` : '—'}</td><td><button type="button" class="btn btn-ghost pqrs-follow-button" onclick="window.abrirDetalleReclamacion(${Number(item.id)})">Ver seguimiento</button></td></tr>`).join('') : '<tr><td colspan="6">No hay PQRS radicadas.</td></tr>';
+};
+
+async function abrirEditorActivo(tipo, activo, inmuebleId) {
+    let modal = document.getElementById('modalEditarActivo');
+    if (!modal) { document.body.insertAdjacentHTML('beforeend', '<div id="modalEditarActivo" class="login-modal hidden"></div>'); modal = document.getElementById('modalEditarActivo'); }
+    const esVehiculo = tipo === 'vehiculo';
+    modal.innerHTML = `<div class="login-box asset-editor-dialog"><button class="close-btn" type="button" onclick="document.getElementById('modalEditarActivo').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button><h2>Editar ${esVehiculo ? 'vehículo' : 'mascota'}</h2><form class="stack-form">${esVehiculo ? `<input name="placa" value="${escapeHtml(activo.placa)}" required><input name="tipo" value="${escapeHtml(activo.tipo || '')}" required><input name="marca" value="${escapeHtml(activo.marca || '')}" placeholder="Marca"><input name="linea" value="${escapeHtml(activo.linea || '')}" placeholder="Línea">` : `<textarea name="descripcion" required>${escapeHtml(activo.descripcion || '')}</textarea>`}<button class="btn btn-primary" type="submit">Guardar cambios</button></form></div>`;
+    modal.querySelector('form').onsubmit = async evento => { evento.preventDefault(); const datos = new FormData(evento.currentTarget); datos.append('action', `actualizar_${tipo}`); datos.append(`${tipo}_id`, activo.id); const r = await fetch('api/inmuebles.php', { method: 'POST', body: datos }); const d = await r.json(); window.notificar(d.message, d.status === 'success' ? 'success' : 'error'); if (d.status === 'success') { modal.classList.add('hidden'); if (currentUser?.rol === 'admin') window.abrirDetalleInmueble(inmuebleId); else loadHomeResidente(); } };
+    modal.classList.remove('hidden');
+}
+
+window.eliminarActivoInmueble = async function (tipo, activoId, inmuebleId) {
+    if (!await confirmarAccion({ titulo: `¿Eliminar ${tipo}?`, texto: 'Esta acción no se puede deshacer.', confirmar: 'Eliminar', icono: 'warning' })) return;
+    const datos = new FormData(); datos.append('action', `eliminar_${tipo}`); datos.append(`${tipo}_id`, activoId);
+    const respuesta = await fetch('api/inmuebles.php', { method: 'POST', body: datos }); const resultado = await respuesta.json();
+    window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+    if (resultado.status === 'success') { if (currentUser?.rol === 'admin') window.abrirDetalleInmueble(inmuebleId); else loadHomeResidente(); }
+};
+
+window.abrirDetalleInmueble = async function (inmuebleId) {
+    const [detalleR, usuariosR] = await Promise.all([fetch(`api/inmuebles.php?action=detalle&inmueble_id=${encodeURIComponent(inmuebleId)}`), fetch('api/users.php?action=list')]);
+    const [detalle, usuarios] = await Promise.all([detalleR.json(), usuariosR.json()]);
+    if (detalle.status !== 'success') return window.notificar(detalle.message, 'error');
+    const { inmueble, vehiculos = [], mascotas = [] } = detalle.data;
+    const vistos = new Set();
+    const personas = (detalle.data.personas || []).filter(persona => { const clave = `${persona.id}:${persona.tipo_relacion}`; if (vistos.has(clave)) return false; vistos.add(clave); return true; });
+    let modal = document.getElementById('modalDetalleInmueble');
+    if (!modal) { document.body.insertAdjacentHTML('beforeend', '<div id="modalDetalleInmueble" class="login-modal detalle-inmueble-modal hidden"></div>'); modal = document.getElementById('modalDetalleInmueble'); }
+    const personasHtml = personas.length ? personas.map(persona => `<article class="inmueble-person-card"><span class="inmueble-person-icon"><i class="fa-solid ${persona.tipo_relacion === 'propietario' ? 'fa-key' : 'fa-house-user'}"></i></span><div><strong>${escapeHtml(persona.nombre)}</strong><small>${escapeHtml(persona.tipo_relacion)} · ${Number(persona.tiene_cuenta) ? 'Acceso al portal' : 'Solo directorio'}</small><small>${escapeHtml(persona.contacto || persona.email || 'Sin contacto')}</small></div></article>`).join('') : '<p class="empty-state">No hay personas vinculadas.</p>';
+    const opcionesPersonas = usuarios.status === 'success' ? usuarios.data.filter(persona => ['residente', 'propietario'].includes(persona.rol)).map(persona => `<option value="${Number(persona.id)}">${escapeHtml(persona.nombre)} · ${escapeHtml(persona.documento)}</option>`).join('') : '';
+    const activosHtml = (tipo, lista) => lista.length ? `<div class="asset-list">${lista.map(activo => `<article><div><strong>${escapeHtml(tipo === 'vehiculo' ? activo.placa : activo.descripcion)}</strong><small>${escapeHtml(tipo === 'vehiculo' ? [activo.tipo, activo.marca, activo.linea].filter(Boolean).join(' · ') : 'Registrada en el inmueble')}</small></div><div class="asset-actions"><button class="btn btn-ghost" type="button" onclick='abrirEditorActivo("${tipo}", ${JSON.stringify(activo).replace(/'/g, '&#39;')}, ${Number(inmuebleId)})'>Editar</button><button class="btn btn-ghost" type="button" style="color:#dc2626" onclick="window.eliminarActivoInmueble('${tipo}', ${Number(activo.id)}, ${Number(inmuebleId)})">Eliminar</button></div></article>`).join('')}</div>` : '<p class="muted">Sin registros.</p>';
+    modal.innerHTML = `<div class="login-box inmueble-detail-dialog"><button class="close-btn" type="button" onclick="document.getElementById('modalDetalleInmueble').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button><header class="inmueble-detail-heading"><div><p class="section-kicker">Ficha del inmueble</p><h2>${escapeHtml(inmueble.nomenclatura || inmueble.apartamento)}</h2><p>${escapeHtml(inmueble.tipo_unidad)} · ${escapeHtml(inmueble.torre || 'Sin torre')}</p></div><div class="inmueble-summary-actions"><strong>${formatCurrency(inmueble.mora_actual)}</strong><button class="btn btn-ghost" type="button" onclick="window.verHistorialInmueble(${Number(inmuebleId)})"><i class="fa-solid fa-clock-rotate-left"></i> Parqueaderos</button></div></header><section class="inmueble-detail-section"><div class="inmueble-section-title"><h3>Personas vinculadas</h3><button class="btn btn-primary" type="button" onclick="window.abrirPersonaDesdeInmueble(${Number(inmuebleId)})">Agregar persona</button></div><div class="inmueble-person-grid">${personasHtml}</div><form id="formVincularUsuarioInmueble" class="inmueble-link-form"><input type="hidden" name="inmueble_id" value="${Number(inmuebleId)}"><label>Persona<select name="usuario_id" required><option value="">Selecciona una persona…</option>${opcionesPersonas}</select></label><label>Relación<select name="tipo_relacion" required><option value="residente">Residente</option><option value="propietario">Propietario</option></select></label><button class="btn btn-ghost" type="submit">Vincular</button></form></section><section class="inmueble-detail-grid"><div class="inmueble-detail-section"><h3><i class="fa-solid fa-car"></i> Vehículos</h3>${activosHtml('vehiculo', vehiculos)}</div><div class="inmueble-detail-section"><h3><i class="fa-solid fa-paw"></i> Mascotas</h3>${activosHtml('mascota', mascotas)}</div></section></div>`;
+    modal.querySelector('#formVincularUsuarioInmueble').onsubmit = async evento => { evento.preventDefault(); const datos = new FormData(evento.currentTarget); datos.append('action', 'vincular_usuario'); const r = await fetch('api/inmuebles.php', { method: 'POST', body: datos }); const d = await r.json(); window.notificar(d.message, d.status === 'success' ? 'success' : 'error'); if (d.status === 'success') window.abrirDetalleInmueble(inmuebleId); };
+    modal.classList.remove('hidden');
+};
+
+window.verHistorialInmueble = async function (inmuebleId) {
+    const respuesta = await fetch(`api/parqueaderos.php?action=historial_inmueble&inmueble_id=${encodeURIComponent(inmuebleId)}`); const resultado = await respuesta.json();
+    if (resultado.status !== 'success') return window.notificar(resultado.message, 'error');
+    const filas = resultado.data.length ? resultado.data.map(item => `<tr><td><strong>${escapeHtml(item.codigo)}</strong><br><small>${escapeHtml(item.tipo)}</small></td><td>${escapeHtml(item.asignado_en)}</td><td>${item.retirado_en ? escapeHtml(item.retirado_en) : '<span class="reserva-estado estado-aprobada">Vigente</span>'}</td><td>${escapeHtml(item.motivo_retiro || '—')}</td></tr>`).join('') : '<tr><td colspan="4">No hay asignaciones registradas.</td></tr>';
+    if (window.Swal) Swal.fire({ title: 'Historial de parqueaderos', html: `<div class="parking-history-dialog"><table class="data-table"><thead><tr><th>Cupo</th><th>Asignado</th><th>Retirado</th><th>Motivo</th></tr></thead><tbody>${filas}</tbody></table></div>`, width: 850, confirmButtonText: 'Cerrar' });
+};
+
+window.verHistorialParqueadero = async function (parqueaderoId, codigo) {
+    const respuesta = await fetch(`api/parqueaderos.php?action=historial&parqueadero_id=${encodeURIComponent(parqueaderoId)}`); const resultado = await respuesta.json();
+    if (resultado.status !== 'success') return window.notificar(resultado.message, 'error');
+    const filas = resultado.data.length ? resultado.data.map(item => `<tr><td>${escapeHtml([item.torre, item.nomenclatura || item.apartamento].filter(Boolean).join(' · '))}</td><td>${escapeHtml(item.asignado_en)}</td><td>${escapeHtml(item.retirado_en || 'Vigente')}</td><td>${escapeHtml(item.motivo_retiro || '—')}</td></tr>`).join('') : '<tr><td colspan="4">No hay asignaciones registradas.</td></tr>';
+    if (window.Swal) Swal.fire({ title: `Historial ${escapeHtml(codigo)}`, html: `<div class="parking-history-dialog"><table class="data-table"><thead><tr><th>Inmueble</th><th>Asignado</th><th>Retirado</th><th>Motivo</th></tr></thead><tbody>${filas}</tbody></table></div>`, width: 850, confirmButtonText: 'Cerrar' });
+};
+
+loadHomeResidente = async function () {
+    await cargarInicioResidenteActivosBase();
+    const [vehiculosR, mascotasR] = await Promise.all([fetch('api/inmuebles.php?action=mis_vehiculos'), fetch('api/inmuebles.php?action=mis_mascotas')]);
+    const [vehiculos, mascotas] = await Promise.all([vehiculosR.json(), mascotasR.json()]);
+    const tablaVehiculos = document.getElementById('tb-mis-vehiculos');
+    if (tablaVehiculos && vehiculos.status === 'success') {
+        const cabecera = tablaVehiculos.closest('table')?.querySelector('thead tr'); if (cabecera) cabecera.innerHTML = '<th>Placa</th><th>Tipo</th><th>Marca</th><th>Acciones</th>';
+        tablaVehiculos.innerHTML = vehiculos.data.length ? vehiculos.data.map(item => `<tr><td>${escapeHtml(item.placa)}</td><td>${escapeHtml(item.tipo)}</td><td>${escapeHtml([item.marca, item.linea].filter(Boolean).join(' · ') || '—')}</td><td class="asset-actions"><button class="btn btn-ghost" onclick='abrirEditorActivo("vehiculo", ${JSON.stringify(item).replace(/'/g, '&#39;')}, ${Number(item.inmueble_id || 0)})'>Editar</button><button class="btn btn-ghost" style="color:#dc2626" onclick="window.eliminarActivoInmueble('vehiculo', ${Number(item.id)}, 0)">Eliminar</button></td></tr>`).join('') : '<tr><td colspan="4">Aún no tienes vehículos registrados.</td></tr>';
+    }
+    const tablaMascotas = document.getElementById('tb-mis-mascotas');
+    if (tablaMascotas && mascotas.status === 'success') {
+        const cabecera = tablaMascotas.closest('table')?.querySelector('thead tr'); if (cabecera) cabecera.innerHTML = '<th>Descripción</th><th>Acciones</th>';
+        tablaMascotas.innerHTML = mascotas.data.length ? mascotas.data.map(item => `<tr><td>${escapeHtml(item.descripcion)}</td><td class="asset-actions"><button class="btn btn-ghost" onclick='abrirEditorActivo("mascota", ${JSON.stringify(item).replace(/'/g, '&#39;')}, ${Number(item.inmueble_id || 0)})'>Editar</button><button class="btn btn-ghost" style="color:#dc2626" onclick="window.eliminarActivoInmueble('mascota', ${Number(item.id)}, 0)">Eliminar</button></td></tr>`).join('') : '<tr><td colspan="2">Aún no tienes mascotas registradas.</td></tr>';
+    }
+    await aplicarMarcaPortal();
+};
+
+
+const cargarConfiguracionConMarcaBase = loadConfiguracion;
+loadConfiguracion = async function () {
+    await cargarConfiguracionConMarcaBase();
+    const formulario = document.getElementById('formConfiguracion');
+    formulario?.addEventListener('submit', () => window.setTimeout(aplicarMarcaPortal, 500));
+};
+
+
+/* PQRS: administración también puede añadir notas y evidencias sin cerrar el caso. */
+const abrirDetallePQRSConNotasAdminBase = window.abrirDetalleReclamacion;
+window.abrirDetalleReclamacion = async function (reclamacionId) {
+    await abrirDetallePQRSConNotasAdminBase(reclamacionId);
+    if (currentUser?.rol !== 'admin') return;
+    const modal = document.getElementById('modalDetallePQRS');
+    const formularioEstado = modal?.querySelector('#formEstadoPQRS');
+    if (!modal || !formularioEstado || modal.querySelector('#formNotaPQRS')) return;
+    formularioEstado.insertAdjacentHTML('afterend', '<form id="formNotaPQRS" class="pqrs-note-form" enctype="multipart/form-data"><h3>Agregar nota de seguimiento</h3><textarea name="contenido" required placeholder="Registra una gestión, respuesta o avance para el residente"></textarea><label class="pqrs-file-field">Adjuntar evidencia opcional<input name="adjuntos[]" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,.mp4,.webm,.mov"><small>Máximo cinco archivos por nota.</small></label><button class="btn btn-primary" type="submit">Agregar nota</button></form>');
+    const formularioNota = modal.querySelector('#formNotaPQRS');
+    formularioNota.onsubmit = async evento => {
+        evento.preventDefault();
+        const datos = new FormData(formularioNota);
+        datos.append('action', 'agregar_nota');
+        datos.append('reclamacion_id', reclamacionId);
+        const respuesta = await fetch('api/reclamaciones.php', { method: 'POST', body: datos });
+        const resultado = await respuesta.json();
+        window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+        if (resultado.status === 'success') { await loadReclamaciones(); window.abrirDetalleReclamacion(reclamacionId); }
+    };
+};

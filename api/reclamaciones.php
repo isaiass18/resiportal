@@ -12,7 +12,7 @@ $rol = $_SESSION['user_rol'] ?? '';
 function archivosReclamacion(PDO $pdo, array $reclamaciones): array
 {
     if (!$reclamaciones) return $reclamaciones;
-    $adjuntos = $pdo->prepare('SELECT id, reclamacion_id, nombre_original, mime, tamano, creado_en FROM reclamacion_adjuntos WHERE reclamacion_id = ? ORDER BY id');
+    $adjuntos = $pdo->prepare('SELECT id, reclamacion_id, nota_id, nombre_original, mime, tamano, creado_en FROM reclamacion_adjuntos WHERE reclamacion_id = ? AND nota_id IS NULL ORDER BY id');
     foreach ($reclamaciones as &$reclamacion) {
         $adjuntos->execute([(int) $reclamacion['id']]);
         $reclamacion['adjuntos'] = $adjuntos->fetchAll();
@@ -74,6 +74,87 @@ if ($action === 'ver_adjunto') {
     header('Content-Disposition: inline; filename="' . rawurlencode($adjunto['nombre_original']) . '"');
     readfile($path);
     exit;
+}
+
+if ($action === 'detalle') {
+    $reclamacionId = (int) ($_GET['reclamacion_id'] ?? 0);
+    $sql = 'SELECT r.*, u.nombre AS usuario_nombre, u.email AS usuario_email, ru.nombre AS resuelto_por_nombre FROM reclamaciones r JOIN usuarios u ON u.id = r.usuario_id LEFT JOIN usuarios ru ON ru.id = r.resuelto_por WHERE r.id = ? AND r.conjunto_id = ?';
+    $params = [$reclamacionId, $conjuntoId];
+    if ($rol !== 'admin') {
+        $sql .= ' AND r.usuario_id = ?';
+        $params[] = $userId;
+    }
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $reclamacion = $stmt->fetch();
+    if (!$reclamacion) responseJSON('error', 'PQRS no encontrada o sin permisos');
+    $inicial = archivosReclamacion($pdo, [$reclamacion])[0]['adjuntos'] ?? [];
+    $notas = $pdo->prepare('SELECT n.id, n.contenido, n.es_solucion, n.creado_en, u.nombre AS autor, u.rol AS autor_rol FROM reclamacion_notas n JOIN usuarios u ON u.id = n.autor_id WHERE n.reclamacion_id = ? ORDER BY n.creado_en ASC, n.id ASC');
+    $notas->execute([$reclamacionId]);
+    $cronologia = $notas->fetchAll();
+    $adjuntosNota = $pdo->prepare('SELECT id, nota_id, nombre_original, mime, tamano, creado_en FROM reclamacion_adjuntos WHERE nota_id = ? ORDER BY id');
+    foreach ($cronologia as &$nota) {
+        $adjuntosNota->execute([(int) $nota['id']]);
+        $nota['adjuntos'] = $adjuntosNota->fetchAll();
+    }
+    responseJSON('success', '', ['reclamacion' => $reclamacion, 'adjuntos' => $inicial, 'notas' => $cronologia]);
+}
+
+if ($action === 'agregar_nota') {
+    if (!in_array($rol, ['admin', 'residente', 'propietario'], true)) responseJSON('error', 'Sin permisos');
+    $reclamacionId = (int) ($_POST['reclamacion_id'] ?? 0);
+    $contenido = trim($_POST['contenido'] ?? '');
+    if ($contenido === '') responseJSON('error', 'Escribe una nota para continuar');
+    if (mb_strlen($contenido) > 10000) responseJSON('error', 'La nota supera el tamaño permitido');
+    $sql = 'SELECT id FROM reclamaciones WHERE id = ? AND conjunto_id = ?';
+    $params = [$reclamacionId, $conjuntoId];
+    if ($rol !== 'admin') {
+        $sql .= ' AND usuario_id = ?';
+        $params[] = $userId;
+    }
+    $verificar = $pdo->prepare($sql);
+    $verificar->execute($params);
+    if (!$verificar->fetch()) responseJSON('error', 'PQRS no encontrada o sin permisos');
+    try {
+        $adjuntos = guardarAdjuntosReclamacion($_FILES['adjuntos'] ?? [], $conjuntoId);
+        $pdo->beginTransaction();
+        $guardarNota = $pdo->prepare('INSERT INTO reclamacion_notas (reclamacion_id, autor_id, contenido) VALUES (?, ?, ?)');
+        $guardarNota->execute([$reclamacionId, $userId, $contenido]);
+        $notaId = (int) $pdo->lastInsertId();
+        if ($adjuntos) {
+            $guardarAdjunto = $pdo->prepare('INSERT INTO reclamacion_adjuntos (reclamacion_id, nota_id, nombre_original, archivo, mime, tamano, subido_por) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            foreach ($adjuntos as $adjunto) $guardarAdjunto->execute([$reclamacionId, $notaId, $adjunto['nombre_original'], $adjunto['archivo'], $adjunto['mime'], $adjunto['tamano'], $userId]);
+        }
+        $pdo->commit();
+        responseJSON('success', 'Seguimiento agregado correctamente');
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        foreach ($adjuntos ?? [] as $adjunto) {
+            $ruta = __DIR__ . '/../../uploads_privados/reclamaciones/' . basename((string) $adjunto['archivo']);
+            if (is_file($ruta)) @unlink($ruta);
+        }
+        responseJSON('error', $e->getMessage());
+    }
+}
+
+if ($action === 'actualizar_estado') {
+    if ($rol !== 'admin') responseJSON('error', 'Solo administración puede actualizar el estado');
+    $reclamacionId = (int) ($_POST['reclamacion_id'] ?? 0);
+    $estado = $_POST['estado'] ?? '';
+    $solucion = trim($_POST['solucion'] ?? '');
+    if (!in_array($estado, ['abierto', 'en_progreso', 'cerrado'], true)) responseJSON('error', 'Estado inválido');
+    if (mb_strlen($solucion) > 10000) responseJSON('error', 'La solución supera el tamaño permitido');
+    if ($estado === 'cerrado' && $solucion === '') responseJSON('error', 'Describe la solución antes de cerrar la PQRS');
+    $existe = $pdo->prepare('SELECT id FROM reclamaciones WHERE id = ? AND conjunto_id = ?');
+    $existe->execute([$reclamacionId, $conjuntoId]);
+    if (!$existe->fetch()) responseJSON('error', 'PQRS no encontrada');
+    if ($estado === 'cerrado') {
+        $pdo->prepare("UPDATE reclamaciones SET estado = 'cerrado', solucion = ?, resuelto_por = ?, resuelto_en = NOW() WHERE id = ? AND conjunto_id = ?")->execute([$solucion, $userId, $reclamacionId, $conjuntoId]);
+        $pdo->prepare('INSERT INTO reclamacion_notas (reclamacion_id, autor_id, contenido, es_solucion) VALUES (?, ?, ?, 1)')->execute([$reclamacionId, $userId, $solucion]);
+    } else {
+        $pdo->prepare('UPDATE reclamaciones SET estado = ?, solucion = NULL, resuelto_por = NULL, resuelto_en = NULL WHERE id = ? AND conjunto_id = ?')->execute([$estado, $reclamacionId, $conjuntoId]);
+    }
+    responseJSON('success', $estado === 'cerrado' ? 'PQRS solucionada y cerrada' : 'Estado de la PQRS actualizado');
 }
 
 if ($action === 'list') {

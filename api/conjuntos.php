@@ -2,9 +2,18 @@
 session_start();
 require_once 'config.php';
 header('Content-Type: application/json');
-if (!isset($_SESSION['user_id']) || $_SESSION['user_rol'] !== 'admin') responseJSON('error', 'Sin permisos');
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
+// La portada solo necesita identidad visual; no expone datos administrativos.
+if ($action === 'public_config') {
+    $conjuntoPublicoId = (int) ($_SESSION['conjunto_id'] ?? 1);
+    $stmt = $pdo->prepare('SELECT nombre, logo_url FROM conjuntos WHERE id = ?');
+    $stmt->execute([$conjuntoPublicoId]);
+    responseJSON('success', '', $stmt->fetch() ?: ['nombre' => 'ResiPortal', 'logo_url' => null]);
+}
+
+if (!isset($_SESSION['user_id']) || $_SESSION['user_rol'] !== 'admin') responseJSON('error', 'Sin permisos');
+
 $conjuntoId = (int) $_SESSION['conjunto_id'];
 
 function guardarLogo(array $file): string

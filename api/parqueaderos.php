@@ -31,6 +31,12 @@ if ($action === 'historial') {
     $stmt->execute([$parqueaderoId, $conjuntoId]);
     responseJSON('success', '', $stmt->fetchAll());
 }
+if ($action === 'historial_inmueble') {
+    $inmuebleId = (int) ($_GET['inmueble_id'] ?? 0);
+    $stmt = $pdo->prepare("SELECT p.codigo, p.tipo, a.asignado_en, a.retirado_en, a.motivo_retiro FROM asignaciones_parqueadero a JOIN parqueaderos p ON p.id = a.parqueadero_id JOIN inmuebles i ON i.id = a.inmueble_id WHERE a.inmueble_id = ? AND i.conjunto_id = ? ORDER BY a.asignado_en DESC");
+    $stmt->execute([$inmuebleId, $conjuntoId]);
+    responseJSON('success', '', $stmt->fetchAll());
+}
 
 if ($action === 'guardar') {
     $id = (int) ($_POST['id'] ?? 0);
