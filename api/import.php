@@ -59,6 +59,17 @@ function hojasXlsx(string $ruta): array
     return $hojas;
 }
 
+function textoXlsxImportacion(SimpleXMLElement $nodo, string $namespace): string
+{
+    $texto = '';
+    foreach ($nodo->children($namespace) as $hijo) {
+        $texto .= $hijo->getName() === 't'
+            ? (string) $hijo
+            : textoXlsxImportacion($hijo, $namespace);
+    }
+    return $texto;
+}
+
 function filasXlsx(string $ruta, int $indiceHoja = 0): array
 {
     $hojas = hojasXlsx($ruta);
@@ -70,7 +81,7 @@ function filasXlsx(string $ruta, int $indiceHoja = 0): array
     $xmlCompartido = $zip->getFromName('xl/sharedStrings.xml');
     if ($xmlCompartido !== false && ($strings = simplexml_load_string($xmlCompartido, 'SimpleXMLElement', LIBXML_NONET | LIBXML_NOCDATA))) {
         $namespace = $strings->getNamespaces(true)[''] ?? $namespace;
-        foreach ($strings->children($namespace)->si as $item) $shared[] = trim((string) $item);
+        foreach ($strings->children($namespace)->si as $item) $shared[] = textoXlsxImportacion($item, $namespace);
     }
     $xmlHoja = $zip->getFromName($hojas[$indiceHoja]['ruta']);
     $zip->close();
@@ -89,7 +100,7 @@ function filasXlsx(string $ruta, int $indiceHoja = 0): array
             $contenido = $celda->children($namespace);
             $tipo = (string) $celda['t'];
             if ($tipo === 's') $valor = $shared[(int) $contenido->v] ?? '';
-            elseif ($tipo === 'inlineStr') $valor = trim((string) $contenido->is);
+            elseif ($tipo === 'inlineStr') $valor = textoXlsxImportacion($contenido->is, $namespace);
             else $valor = (string) $contenido->v;
             $fila[$indice] = $valor;
         }
