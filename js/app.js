@@ -5218,3 +5218,179 @@ window.editarPersonaVinculada = async function (usuarioId, rolPersona, inmuebleI
     if (!usuariosActuales.some(item => Number(item.id) === Number(usuarioId))) await loadUsuarios();
     window.openUsuarioModal(usuarioId, rolPersona, inmuebleId);
 };
+
+
+/* Portada pública administrable: diapositivas, edición y rotación automática. */
+let heroSlidesAdministracion = [];
+
+function urlHeroSeguraCliente(url) {
+    const valor = String(url || '').trim();
+    return /^#[a-zA-Z][\w-]*$/.test(valor) || /^\/(?!\/)[\w./?&=,%#-]*$/.test(valor) || /^https:\/\//i.test(valor);
+}
+
+window.loadPublicHero = async function () {
+    const hero = document.querySelector('.hero-section');
+    if (!hero) return;
+    try {
+        const respuesta = await fetch('api/conjuntos.php?action=public_hero');
+        const resultado = await respuesta.json();
+        const diapositivas = resultado.status === 'success' ? (resultado.data || []).filter(item => item.imagen_url && item.titulo) : [];
+        if (!diapositivas.length) return;
+        if (window.publicHeroSwiper) {
+            window.publicHeroSwiper.destroy(true, true);
+            window.publicHeroSwiper = null;
+        }
+        hero.classList.add('hero-slider');
+        hero.innerHTML = `<div class="swiper heroSwiper" aria-label="Destacados del conjunto"><div class="swiper-wrapper">${diapositivas.map(diapositiva => {
+            const boton = diapositiva.etiqueta_boton && urlHeroSeguraCliente(diapositiva.url_boton)
+                ? `<a class="btn btn-primary hero-slide-button" href="${escapeHtml(diapositiva.url_boton)}">${escapeHtml(diapositiva.etiqueta_boton)}</a>`
+                : '';
+            return `<section class="swiper-slide hero-slide"><img class="hero-slide-image" src="${escapeHtml(diapositiva.imagen_url)}" alt="${escapeHtml(diapositiva.titulo)}"><div class="hero-slide-overlay"></div><div class="hero-slide-content"><h1>${escapeHtml(diapositiva.titulo)}</h1>${diapositiva.texto ? `<p>${escapeHtml(diapositiva.texto)}</p>` : ''}${boton ? `<div class="hero-buttons">${boton}</div>` : ''}</div></section>`;
+        }).join('')}</div><div class="swiper-pagination hero-swiper-pagination"></div></div>`;
+        if (typeof Swiper === 'undefined') return;
+        const movimientoReducido = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        window.publicHeroSwiper = new Swiper('.heroSwiper', {
+            loop: diapositivas.length > 1,
+            speed: movimientoReducido ? 0 : 850,
+            autoplay: diapositivas.length > 1 && !movimientoReducido ? { delay: 6000, disableOnInteraction: false, pauseOnMouseEnter: true } : false,
+            pagination: { el: '.hero-swiper-pagination', clickable: true },
+            a11y: { enabled: true }
+        });
+    } catch (error) {
+        console.warn('No fue posible cargar la portada administrable.', error);
+    }
+};
+
+function instalarGestionHero() {
+    const configuracion = document.getElementById('formConfiguracion');
+    const tarjeta = configuracion?.closest('.card');
+    if (!tarjeta || document.getElementById('hero-admin-panel')) return;
+    tarjeta.insertAdjacentHTML('afterend', `<section id="hero-admin-panel" class="card hero-admin-panel"><div class="hero-admin-heading"><div><p class="admin-dashboard-eyebrow"><i class="fa-solid fa-images"></i> Portada pública</p><h2>Carrusel de bienvenida</h2><p>Administra el texto, botón e imágenes que se muestran al entrar al portal. Las diapositivas activas cambian automáticamente.</p></div><button class="btn btn-primary" type="button" onclick="window.nuevaHeroSlide()"><i class="fa-solid fa-plus"></i> Nueva diapositiva</button></div><div id="hero-slide-list" class="hero-slide-list"><p class="muted">Cargando diapositivas…</p></div><form id="formHeroSlide" class="hero-editor-form hidden" enctype="multipart/form-data" novalidate><div class="hero-editor-title"><h3 id="hero-editor-heading">Nueva diapositiva</h3><button class="btn btn-ghost hero-cancel-button" type="button" onclick="window.cancelarHeroSlide()">Cerrar</button></div><input type="hidden" name="id" id="heroSlideId"><div class="hero-editor-grid"><label>Título de la portada <span>*</span><input name="titulo" id="heroTitulo" maxlength="180" required placeholder="Ej. Bienvenidos a nuestro conjunto"></label><label>Texto del botón<input name="etiqueta_boton" id="heroEtiqueta" maxlength="80" placeholder="Ej. Conocer la comunidad"></label><label class="hero-editor-wide">Descripción<textarea name="texto" id="heroTexto" maxlength="2000" rows="4" placeholder="Mensaje principal que verá la comunidad."></textarea></label><label>Destino del botón<input name="url_boton" id="heroEnlace" maxlength="500" placeholder="#seccion-eventos, / o https://…"></label><label>URL de imagen (opcional)<input name="imagen_url" id="heroImagenUrl" maxlength="255" placeholder="https://…"></label><label class="hero-editor-wide">O cargar imagen (JPG, PNG o WEBP · máximo 3 MB)<input name="imagen_archivo" id="heroImagenArchivo" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"></label><label class="hero-active-toggle"><input name="activo" id="heroActivo" type="checkbox" value="1" checked> Mostrar esta diapositiva en la portada</label></div><img id="heroImagenPreview" class="hero-image-preview hidden" alt="Vista previa de la diapositiva"><div class="hero-editor-actions"><small>El título y una imagen son obligatorios. Puedes dejar el botón vacío.</small><button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Guardar diapositiva</button></div></form></section>`);
+    const formulario = document.getElementById('formHeroSlide');
+    const actualizarVista = () => {
+        const archivo = document.getElementById('heroImagenArchivo')?.files?.[0];
+        const url = archivo ? URL.createObjectURL(archivo) : document.getElementById('heroImagenUrl')?.value.trim();
+        const vista = document.getElementById('heroImagenPreview');
+        if (url) { vista.src = url; vista.classList.remove('hidden'); } else vista.classList.add('hidden');
+    };
+    document.getElementById('heroImagenArchivo').onchange = actualizarVista;
+    document.getElementById('heroImagenUrl').oninput = actualizarVista;
+    formulario.onsubmit = async evento => {
+        evento.preventDefault();
+        const titulo = document.getElementById('heroTitulo').value.trim();
+        if (!titulo) return window.notificar('Escribe el título de la diapositiva.', 'error');
+        const boton = formulario.querySelector('[type="submit"]');
+        if (boton.disabled) return;
+        const datos = new FormData(formulario);
+        datos.append('action', 'save_hero');
+        boton.disabled = true;
+        try {
+            const respuesta = await fetch('api/conjuntos.php', { method: 'POST', body: datos });
+            const resultado = await respuesta.json();
+            window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+            if (resultado.status === 'success') {
+                window.cancelarHeroSlide();
+                await window.cargarHeroAdmin();
+                await window.loadPublicHero();
+            }
+        } catch (error) {
+            window.notificar('No fue posible guardar la diapositiva.', 'error');
+        } finally {
+            boton.disabled = false;
+        }
+    };
+}
+
+function renderizarHeroAdmin() {
+    const lista = document.getElementById('hero-slide-list');
+    if (!lista) return;
+    lista.innerHTML = heroSlidesAdministracion.length ? heroSlidesAdministracion.map((diapositiva, indice) => `<article class="hero-admin-item ${Number(diapositiva.activo) ? '' : 'is-inactive'}"><img src="${escapeHtml(diapositiva.imagen_url)}" alt=""><div class="hero-admin-item-content"><div><span class="hero-order">Diapositiva ${indice + 1}</span><strong>${escapeHtml(diapositiva.titulo)}</strong><small>${Number(diapositiva.activo) ? 'Visible en la portada' : 'Oculta actualmente'}</small></div><div class="hero-admin-item-actions"><button class="btn btn-ghost" type="button" onclick="window.moverHeroSlide(${Number(diapositiva.id)}, -1)" ${indice === 0 ? 'disabled' : ''} aria-label="Subir"><i class="fa-solid fa-arrow-up"></i></button><button class="btn btn-ghost" type="button" onclick="window.moverHeroSlide(${Number(diapositiva.id)}, 1)" ${indice === heroSlidesAdministracion.length - 1 ? 'disabled' : ''} aria-label="Bajar"><i class="fa-solid fa-arrow-down"></i></button><button class="btn btn-ghost" type="button" onclick="window.editarHeroSlide(${Number(diapositiva.id)})"><i class="fa-solid fa-pen"></i> Editar</button><button class="btn btn-ghost danger-action" type="button" onclick="window.eliminarHeroSlide(${Number(diapositiva.id)})"><i class="fa-solid fa-trash"></i></button></div></div></article>`).join('') : '<p class="muted">No hay diapositivas. La portada predeterminada seguirá visible hasta que crees una.</p>';
+}
+
+window.cargarHeroAdmin = async function () {
+    const lista = document.getElementById('hero-slide-list');
+    if (!lista) return;
+    try {
+        const respuesta = await fetch('api/conjuntos.php?action=list_hero');
+        const resultado = await respuesta.json();
+        if (resultado.status !== 'success') throw new Error(resultado.message);
+        heroSlidesAdministracion = resultado.data || [];
+        renderizarHeroAdmin();
+    } catch (error) {
+        lista.innerHTML = `<p class="muted">${escapeHtml(error.message || 'No fue posible cargar las diapositivas.')}</p>`;
+    }
+};
+
+window.nuevaHeroSlide = function () {
+    const formulario = document.getElementById('formHeroSlide');
+    if (!formulario) return;
+    formulario.reset();
+    document.getElementById('heroSlideId').value = '';
+    document.getElementById('hero-editor-heading').textContent = 'Nueva diapositiva';
+    document.getElementById('heroActivo').checked = true;
+    document.getElementById('heroImagenPreview').classList.add('hidden');
+    formulario.classList.remove('hidden');
+    document.getElementById('heroTitulo').focus();
+};
+
+window.cancelarHeroSlide = function () {
+    const formulario = document.getElementById('formHeroSlide');
+    formulario?.reset();
+    formulario?.classList.add('hidden');
+};
+
+window.editarHeroSlide = function (id) {
+    const diapositiva = heroSlidesAdministracion.find(item => Number(item.id) === Number(id));
+    if (!diapositiva) return;
+    const formulario = document.getElementById('formHeroSlide');
+    document.getElementById('heroSlideId').value = diapositiva.id;
+    document.getElementById('heroTitulo').value = diapositiva.titulo || '';
+    document.getElementById('heroTexto').value = diapositiva.texto || '';
+    document.getElementById('heroEtiqueta').value = diapositiva.etiqueta_boton || '';
+    document.getElementById('heroEnlace').value = diapositiva.url_boton || '';
+    document.getElementById('heroImagenUrl').value = diapositiva.imagen_url || '';
+    document.getElementById('heroActivo').checked = Number(diapositiva.activo) === 1;
+    document.getElementById('hero-editor-heading').textContent = 'Editar diapositiva';
+    const vista = document.getElementById('heroImagenPreview');
+    vista.src = diapositiva.imagen_url;
+    vista.classList.remove('hidden');
+    formulario.classList.remove('hidden');
+    formulario.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+window.eliminarHeroSlide = async function (id) {
+    const diapositiva = heroSlidesAdministracion.find(item => Number(item.id) === Number(id));
+    if (!diapositiva || !confirm(`¿Eliminar la diapositiva “${diapositiva.titulo}”?`)) return;
+    const datos = new FormData();
+    datos.append('action', 'delete_hero');
+    datos.append('id', id);
+    const respuesta = await fetch('api/conjuntos.php', { method: 'POST', body: datos });
+    const resultado = await respuesta.json();
+    window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+    if (resultado.status === 'success') { await window.cargarHeroAdmin(); await window.loadPublicHero(); }
+};
+
+window.moverHeroSlide = async function (id, direccion) {
+    const desde = heroSlidesAdministracion.findIndex(item => Number(item.id) === Number(id));
+    const hasta = desde + direccion;
+    if (desde < 0 || hasta < 0 || hasta >= heroSlidesAdministracion.length) return;
+    const ordenado = [...heroSlidesAdministracion];
+    [ordenado[desde], ordenado[hasta]] = [ordenado[hasta], ordenado[desde]];
+    const datos = new FormData();
+    datos.append('action', 'reorder_hero');
+    datos.append('ids', JSON.stringify(ordenado.map(item => item.id)));
+    const respuesta = await fetch('api/conjuntos.php', { method: 'POST', body: datos });
+    const resultado = await respuesta.json();
+    window.notificar(resultado.message, resultado.status === 'success' ? 'success' : 'error');
+    if (resultado.status === 'success') { await window.cargarHeroAdmin(); await window.loadPublicHero(); }
+};
+
+const cargarConfiguracionHeroBase = loadConfiguracion;
+loadConfiguracion = async function () {
+    await cargarConfiguracionHeroBase();
+    instalarGestionHero();
+    await window.cargarHeroAdmin();
+};
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.loadPublicHero(), { once: true });
+else window.loadPublicHero();
