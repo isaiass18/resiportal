@@ -5790,3 +5790,47 @@ hr {
         flex: 1;
     }
 }
+
+
+/* Formulario global de usuarios: evita etiquetas duplicadas y respeta el rol. */
+#formCrearUsuario .form-field-label {
+    display: none !important;
+}
+
+#modalUsuario .user-access-toggle[hidden],
+#modalUsuario #usrInmuebleGrupo[hidden] {
+    display: none !important;
+}
+
+.user-modal-dialog {
+    width: min(540px, calc(100vw - 32px));
+    max-width: 540px;
+    text-align: left;
+}
+
+.user-modal-dialog h2 {
+    margin: 0 42px 18px 0;
+}
+
+.user-modal-dialog .form-group {
+    display: grid;
+    gap: 6px;
+}
+
+.user-modal-dialog .form-group label,
+.user-modal-dialog .form-group small {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.user-modal-dialog input,
+.user-modal-dialog select {
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    background: #fff;
+    color: var(--text-main);
+    font: inherit;
+}

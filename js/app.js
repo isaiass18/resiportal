@@ -5106,3 +5106,115 @@ window.initImportView = function () {
         cerrarModal();
     });
 };
+
+
+/* Gestión de usuarios: modal disponible desde Usuarios e Inmuebles, con guardado directo. */
+function asegurarModalUsuarioGlobal() {
+    let modal = document.getElementById('modalUsuario');
+    if (!modal) {
+        document.body.insertAdjacentHTML('beforeend', `<div id="modalUsuario" class="login-modal hidden" style="z-index:19000"><div class="login-box user-modal-dialog"><button class="close-btn" type="button" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button><h2 id="modalUsuarioTitle">Crear usuario</h2><form id="formCrearUsuario" class="stack-form" novalidate><input type="hidden" id="usrId"><div class="form-group"><label>Documento</label><input id="usrDoc" required placeholder="Ej. 123456789"></div><div class="form-group"><label>Nombre completo</label><input id="usrNombre" required placeholder="Ej. Juan Pérez"></div><div class="form-group"><label>Correo electrónico</label><input id="usrEmail" type="email" placeholder="correo@ejemplo.com"></div><div class="form-group"><label>Contraseña</label><input id="usrPass" type="password" placeholder="Mínimo 8 caracteres para cuentas de acceso"></div><div class="form-group"><label>Rol en el sistema</label><select id="usrRol"><option value="admin">Administrador</option><option value="vigilante">Vigilante</option><option value="residente">Residente</option><option value="propietario">Propietario</option></select></div><div id="usrInmuebleGrupo" class="form-group"><label>Apartamento o casa asociado</label><select id="usrInmuebleId"></select><small>Obligatorio para residentes y propietarios.</small></div><label id="usrAccesoGrupo" class="user-access-toggle"><input id="usrSinAcceso" type="checkbox"> Registrar como persona sin acceso al portal</label><button id="btnGuardarUsuarioDirecto" type="button" class="btn btn-primary">Guardar usuario</button></form></div></div>`);
+        modal = document.getElementById('modalUsuario');
+    }
+    const form = modal.querySelector('#formCrearUsuario');
+    const rol = modal.querySelector('#usrRol');
+    const boton = modal.querySelector('#btnGuardarUsuarioDirecto') || form?.querySelector('[type="submit"]');
+    if (!form || !rol || !boton) return null;
+    form.noValidate = true;
+    if (!modal.querySelector('#usrInmuebleGrupo')) {
+        boton.insertAdjacentHTML('beforebegin', '<div id="usrInmuebleGrupo" class="form-group"><label>Apartamento o casa asociado</label><select id="usrInmuebleId"></select><small>Obligatorio para residentes y propietarios.</small></div><label id="usrAccesoGrupo" class="user-access-toggle"><input id="usrSinAcceso" type="checkbox"> Registrar como persona sin acceso al portal</label>');
+    }
+    rol.innerHTML = '<option value="admin">Administrador</option><option value="vigilante">Vigilante</option><option value="residente">Residente</option><option value="propietario">Propietario</option>';
+    boton.id = 'btnGuardarUsuarioDirecto';
+    boton.type = 'button';
+    boton.textContent = 'Guardar usuario';
+    boton.onclick = () => window.guardarUsuarioDesdeModal();
+    form.onsubmit = evento => { evento.preventDefault(); window.guardarUsuarioDesdeModal(); };
+    modal.querySelector('.close-btn').onclick = () => modal.classList.add('hidden');
+    rol.onchange = () => sincronizarModalUsuarioGlobal(modal);
+    modal.querySelector('#usrSinAcceso')?.addEventListener('change', () => sincronizarModalUsuarioGlobal(modal));
+    return modal;
+}
+
+function sincronizarModalUsuarioGlobal(modal) {
+    const rol = modal.querySelector('#usrRol')?.value || '';
+    const esPersona = ['residente', 'propietario'].includes(rol);
+    const grupoInmueble = modal.querySelector('#usrInmuebleGrupo');
+    const grupoAcceso = modal.querySelector('#usrAccesoGrupo');
+    const inmueble = modal.querySelector('#usrInmuebleId');
+    const sinAcceso = modal.querySelector('#usrSinAcceso');
+    const correo = modal.querySelector('#usrEmail');
+    const password = modal.querySelector('#usrPass');
+    if (grupoInmueble) grupoInmueble.hidden = !esPersona;
+    if (grupoAcceso) grupoAcceso.hidden = !esPersona;
+    if (inmueble) inmueble.required = esPersona;
+    if (!esPersona && sinAcceso) { sinAcceso.checked = false; sinAcceso.disabled = true; }
+    else if (sinAcceso) sinAcceso.disabled = false;
+    const requiereAcceso = !esPersona || !sinAcceso?.checked;
+    if (correo) correo.required = requiereAcceso;
+    if (password) password.placeholder = requiereAcceso ? 'Mínimo 8 caracteres para cuentas de acceso' : 'Sin contraseña: solo aparece en directorio';
+}
+
+window.openUsuarioModal = function (id = null, rolPreferido = rolUsuariosActivo, inmueblePreferido = '') {
+    const modal = asegurarModalUsuarioGlobal();
+    if (!modal) return window.notificar('No fue posible preparar el formulario de usuario.', 'error');
+    const form = modal.querySelector('#formCrearUsuario');
+    const usuario = usuariosActuales.find(item => Number(item.id) === Number(id));
+    form.reset();
+    modal.querySelector('#usrId').value = usuario?.id || '';
+    modal.querySelector('#modalUsuarioTitle').textContent = usuario ? 'Editar persona o usuario' : `Crear ${rolPreferido}`;
+    modal.querySelector('#usrDoc').value = usuario?.documento || '';
+    modal.querySelector('#usrNombre').value = usuario?.nombre || '';
+    modal.querySelector('#usrEmail').value = usuario?.email || '';
+    modal.querySelector('#usrRol').value = usuario?.rol || rolPreferido || 'admin';
+    modal.querySelector('#usrInmuebleId').innerHTML = opcionesInmuebleUsuario(inmueblePreferido || usuario?.inmueble_id || '');
+    modal.querySelector('#usrSinAcceso').checked = usuario ? !Number(usuario.tiene_cuenta) : ['residente', 'propietario'].includes(rolPreferido);
+    modal.dataset.inmuebleId = String(inmueblePreferido || '');
+    sincronizarModalUsuarioGlobal(modal);
+    modal.classList.remove('hidden');
+};
+
+window.guardarUsuarioDesdeModal = async function () {
+    const modal = asegurarModalUsuarioGlobal();
+    if (!modal) return;
+    const valor = selector => String(modal.querySelector(selector)?.value || '').trim();
+    const documento = valor('#usrDoc');
+    const nombre = valor('#usrNombre');
+    const email = valor('#usrEmail');
+    const password = valor('#usrPass');
+    const rol = valor('#usrRol');
+    const inmuebleId = valor('#usrInmuebleId');
+    const sinAcceso = Boolean(modal.querySelector('#usrSinAcceso')?.checked);
+    const id = valor('#usrId');
+    const esPersona = ['residente', 'propietario'].includes(rol);
+    if (!documento || !nombre || !rol) return window.notificar('Documento, nombre y rol son obligatorios.', 'error');
+    if (esPersona && !inmuebleId) return window.notificar('Selecciona el apartamento o casa asociado.', 'error');
+    if ((!esPersona || !sinAcceso) && !email) return window.notificar('El correo es obligatorio para esta cuenta de acceso.', 'error');
+    if (!id && (!esPersona || !sinAcceso) && password.length < 8) return window.notificar('La contraseña inicial debe tener mínimo 8 caracteres.', 'error');
+    if (password && password.length < 8) return window.notificar('La contraseña debe tener mínimo 8 caracteres.', 'error');
+    const boton = modal.querySelector('#btnGuardarUsuarioDirecto');
+    if (boton?.disabled) return;
+    const datos = new FormData();
+    [['action', id ? 'update' : 'crear_usuario'], ['id', id], ['documento', documento], ['nombre', nombre], ['email', email], ['password', password], ['rol', rol], ['inmueble_id', inmuebleId]].forEach(([campo, dato]) => datos.append(campo, dato));
+    if (sinAcceso && esPersona) datos.append('sin_acceso', '1');
+    if (boton) { boton.disabled = true; boton.textContent = 'Guardando…'; }
+    try {
+        const respuesta = await fetch('api/users.php', { method: 'POST', body: datos });
+        const resultado = await respuesta.json();
+        window.notificar(resultado.message || 'No fue posible guardar el usuario.', resultado.status === 'success' ? 'success' : 'error');
+        if (resultado.status !== 'success') return;
+        modal.classList.add('hidden');
+        if (document.getElementById('listaUsuarios')) await loadUsuarios();
+        const inmuebleActivo = Number(modal.dataset.inmuebleId || 0);
+        if (inmuebleActivo && typeof window.abrirDetalleInmueble === 'function') await window.abrirDetalleInmueble(inmuebleActivo);
+    } catch (error) {
+        console.error('Error guardando usuario', error);
+        window.notificar('No fue posible comunicarse con el servidor al guardar el usuario.', 'error');
+    } finally {
+        if (boton) { boton.disabled = false; boton.textContent = 'Guardar usuario'; }
+    }
+};
+
+window.editarPersonaVinculada = async function (usuarioId, rolPersona, inmuebleId) {
+    if (!usuariosActuales.some(item => Number(item.id) === Number(usuarioId))) await loadUsuarios();
+    window.openUsuarioModal(usuarioId, rolPersona, inmuebleId);
+};
