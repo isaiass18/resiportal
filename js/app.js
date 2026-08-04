@@ -4058,7 +4058,7 @@ async function aplicarMarcaPortal() {
         document.title = `${nombre} · Portal residencial`;
         document.querySelectorAll('.public-nav .logo, .sidebar .logo').forEach(contenedor => {
             contenedor.innerHTML = logo
-                ? `<img class="conjunto-brand-logo" src="${escapeHtml(logo)}" alt="Logo de ${escapeHtml(nombre)}"><span>${escapeHtml(nombre)}</span>`
+                ? `<img class="conjunto-brand-logo" src="${escapeHtml(logo)}" alt="Logo de ${escapeHtml(nombre)}" style="width:36px !important;height:36px !important;max-width:36px !important;max-height:36px !important;object-fit:contain;display:block"> <span>${escapeHtml(nombre)}</span>`
                 : '<i class="fa-solid fa-building-user" aria-hidden="true"></i><span></span>';
             contenedor.querySelector('span').textContent = nombre;
         });
