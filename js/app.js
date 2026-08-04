@@ -5394,3 +5394,277 @@ loadConfiguracion = async function () {
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.loadPublicHero(), { once: true });
 else window.loadPublicHero();
+
+
+/* Estado de cuenta: implementación final única para residentes y propietarios. */
+async function leerRespuestaFinanciera(respuesta) {
+    const contenido = await respuesta.text();
+    let resultado;
+    try {
+        resultado = JSON.parse(contenido);
+    } catch (_) {
+        throw new Error('El servidor devolvió una respuesta no válida al consultar el estado de cuenta.');
+    }
+    if (!respuesta.ok || resultado.status !== 'success') throw new Error(resultado.message || 'No fue posible cargar el estado de cuenta.');
+    return resultado;
+}
+
+function actualizarAvisoEstadoCuenta(mensaje = '') {
+    const tarjeta = document.getElementById('txtDeudaResidente')?.closest('.card');
+    if (!tarjeta) return;
+    let aviso = tarjeta.querySelector('.account-summary-message');
+    if (!aviso) {
+        tarjeta.insertAdjacentHTML('beforeend', '<p class="account-summary-message hidden" role="status"></p>');
+        aviso = tarjeta.querySelector('.account-summary-message');
+    }
+    aviso.textContent = mensaje;
+    aviso.classList.toggle('hidden', !mensaje);
+}
+
+function prepararSelectorInmueblePagos(inmuebles, cuenta) {
+    const formulario = document.getElementById('formReportarPago');
+    if (!formulario) return;
+    let selector = document.getElementById('misPagosInmueble');
+    if (!selector) {
+        formulario.insertAdjacentHTML('beforebegin', '<label id="misPagosInmuebleGrupo" class="form-group hidden"><span>Inmueble para este pago</span><select id="misPagosInmueble"></select></label>');
+        selector = document.getElementById('misPagosInmueble');
+        selector.onchange = () => window.loadMisPagos(selector.value);
+    }
+    const grupo = document.getElementById('misPagosInmuebleGrupo');
+    const lista = Array.isArray(inmuebles) ? inmuebles : [];
+    selector.innerHTML = lista.map(inmueble => `<option value="${Number(inmueble.id)}">${escapeHtml(etiquetaInmueble(inmueble))}</option>`).join('');
+    if (cuenta) selector.value = String(cuenta.id);
+    grupo?.classList.toggle('hidden', lista.length < 2);
+    formulario.querySelectorAll('input, select, textarea, button').forEach(campo => { campo.disabled = !cuenta; });
+    selector.disabled = !cuenta;
+}
+
+function renderizarTablaMisPagos(historial) {
+    const tabla = document.getElementById('tb-mis-pagos');
+    if (!tabla) return;
+    tabla.closest('.card')?.setAttribute('id', 'historial-pagos');
+    const cabecera = tabla.closest('table')?.querySelector('thead tr');
+    if (cabecera) cabecera.innerHTML = '<th>Fecha</th><th>Valor</th><th>Método</th><th>Referencia / descripción</th><th>Soporte</th><th>Estado</th>';
+    tabla.innerHTML = historial.length
+        ? historial.map(pago => `<tr><td>${escapeHtml(pago.fecha_pago)}</td><td>${formatCurrency(pago.valor)}</td><td>${escapeHtml(pago.metodo_pago)}</td><td>${escapeHtml(pago.referencia || '—')}<br><small>${escapeHtml(pago.descripcion || 'Sin descripción')}</small></td><td>${enlaceSoportePago(pago)}</td><td><span class="reserva-estado estado-${escapeHtml(pago.estado)}">${escapeHtml(pago.estado)}</span></td></tr>`).join('')
+        : '<tr><td colspan="6">No has reportado pagos para este inmueble.</td></tr>';
+}
+
+function enlazarReportePagoEstadoCuenta() {
+    const formulario = document.getElementById('formReportarPago');
+    if (!formulario) return;
+    formulario.onsubmit = async evento => {
+        evento.preventDefault();
+        if (!estadoCuentaResidente.cuenta) return window.notificar('No tienes un inmueble asociado para reportar un pago.', 'warning');
+        const datos = new FormData();
+        datos.append('action', 'reportar_pago');
+        datos.append('inmueble_id', String(estadoCuentaResidente.cuenta.id));
+        datos.append('valor', valorMonedaInput('repPagoValor'));
+        datos.append('referencia', document.getElementById('repPagoRef').value);
+        datos.append('metodo', document.getElementById('repPagoMetodo').value);
+        datos.append('descripcion', document.getElementById('repPagoDescripcion').value);
+        const soporte = document.getElementById('repPagoSoporte')?.files[0];
+        if (soporte) datos.append('soporte', soporte);
+        try {
+            const pago = await leerRespuestaFinanciera(await fetch('api/finanzas.php', { method: 'POST', body: datos }));
+            window.notificar(pago.message || 'Pago reportado.', 'success');
+            formulario.reset();
+            await window.loadMisPagos();
+        } catch (error) {
+            window.notificar(error.message || 'No fue posible reportar el pago.', 'error');
+        }
+    };
+    prepararCamposMoneda(document);
+}
+
+loadMisPagos = window.loadMisPagos = async function (inmuebleId = '') {
+    const selector = document.getElementById('misPagosInmueble');
+    const seleccionado = inmuebleId || selector?.value || '';
+    const parametro = seleccionado ? `&inmueble_id=${encodeURIComponent(seleccionado)}` : '';
+    try {
+        const resultado = await leerRespuestaFinanciera(await fetch(`api/finanzas.php?action=mis_pagos${parametro}`));
+        const datos = resultado.data || {};
+        const cuenta = datos.cuenta || null;
+        const historial = Array.isArray(datos.historial) ? datos.historial : [];
+        const cuotas = Array.isArray(datos.cuotas) ? datos.cuotas : [];
+        const inmuebles = Array.isArray(datos.inmuebles) ? datos.inmuebles : [];
+        estadoCuentaResidente = { cuenta, historial, cuotas, proxima_cuota: Number(datos.proxima_cuota || 0), inmuebles };
+        prepararResumenCuenta();
+        prepararSelectorInmueblePagos(inmuebles, cuenta);
+        enlazarReportePagoEstadoCuenta();
+        if (!cuenta) {
+            document.getElementById('txtDeudaResidente').textContent = formatCurrency(0);
+            document.getElementById('txtInmuebleResidente').innerHTML = '<i class="fa-solid fa-building"></i> Sin inmueble asociado';
+            renderizarTablaMisPagos([]);
+            actualizarAvisoEstadoCuenta(resultado.message || 'No tienes un inmueble asignado. Solicita a la administración que revise tu vínculo.');
+            return null;
+        }
+        document.getElementById('txtDeudaResidente').textContent = formatCurrency(cuenta.mora_actual);
+        document.getElementById('txtInmuebleResidente').innerHTML = `<i class="fa-solid fa-building"></i> ${escapeHtml(etiquetaInmueble(cuenta))}`;
+        actualizarAvisoEstadoCuenta('');
+        renderizarTablaMisPagos(historial);
+        return estadoCuentaResidente;
+    } catch (error) {
+        estadoCuentaResidente = { cuenta: null, historial: [], cuotas: [], proxima_cuota: 0, inmuebles: [] };
+        document.getElementById('txtDeudaResidente')?.replaceChildren(document.createTextNode(formatCurrency(0)));
+        const tabla = document.getElementById('tb-mis-pagos');
+        if (tabla) tabla.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message || 'No fue posible cargar el estado de cuenta.')}</td></tr>`;
+        actualizarAvisoEstadoCuenta(error.message || 'No fue posible cargar el estado de cuenta. Inténtalo de nuevo.');
+        window.notificar(error.message || 'No fue posible cargar el estado de cuenta.', 'error');
+        return null;
+    }
+};
+
+window.verHistorialPagos = async function () {
+    if (!estadoCuentaResidente.cuenta) await window.loadMisPagos();
+    if (!estadoCuentaResidente.cuenta) return window.notificar('No hay un inmueble asociado para consultar movimientos. Solicita a la administración que revise tu vínculo.', 'warning');
+    const historial = document.getElementById('historial-pagos');
+    if (!historial) return window.notificar('No fue posible ubicar el historial de pagos. Actualiza la vista e inténtalo de nuevo.', 'error');
+    historial.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+window.descargarEstadoCuenta = async function () {
+    if (!estadoCuentaResidente.cuenta) await window.loadMisPagos();
+    const { cuenta, historial = [], cuotas = [], proxima_cuota = 0 } = estadoCuentaResidente;
+    if (!cuenta) return window.notificar('No hay un inmueble asociado para descargar el resumen. Solicita a la administración que revise tu vínculo.', 'warning');
+    const unidad = etiquetaInmueble(cuenta);
+    const celdaCsv = valor => {
+        const texto = String(valor ?? '').replace(/"/g, '""');
+        return `"${/^[=+\-@]/.test(texto) ? `'${texto}` : texto}"`;
+    };
+    const filas = [
+        ['Estado de cuenta ResiPortal'],
+        ['Inmueble', unidad],
+        ['Deuda actual', Number(cuenta.mora_actual || 0).toFixed(2)],
+        ['Próxima cuota de administración', Number(proxima_cuota || 0).toFixed(2)],
+        [],
+        ['Movimientos de pago'],
+        ['Fecha', 'Valor', 'Método', 'Referencia', 'Descripción', 'Estado'],
+        ...historial.map(pago => [pago.fecha_pago, Number(pago.valor || 0).toFixed(2), pago.metodo_pago, pago.referencia, pago.descripcion, pago.estado]),
+        [],
+        ['Cuotas generadas'],
+        ['Período', 'Valor', 'Estado', 'Fecha de generación'],
+        ...cuotas.map(cuota => [`${cuota.mes}/${cuota.anio}`, Number(cuota.valor || 0).toFixed(2), cuota.estado, cuota.fecha_generacion])
+    ];
+    const csv = filas.map(fila => fila.map(celdaCsv).join(';')).join('\n');
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const enlace = document.createElement('a');
+    enlace.href = url;
+    enlace.download = 'estado-de-cuenta-resiportal.csv';
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+
+/* Configuración por pestañas y agenda de reservas consolidada. */
+formatDate = function (value) {
+    if (!value) return 'Sin fecha';
+    const soloFecha = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (soloFecha) {
+        const [, anio, mes, dia] = soloFecha;
+        return new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+            .format(new Date(Number(anio), Number(mes) - 1, Number(dia)));
+    }
+    return new Date(String(value).replace(' ', 'T')).toLocaleDateString('es-CO', {
+        day: '2-digit', month: 'short', year: 'numeric'
+    });
+};
+
+const cargarConfiguracionPestanasBase = cargarConfiguracionHeroBase;
+loadConfiguracion = async function () {
+    await cargarConfiguracionPestanasBase();
+    const raiz = document.querySelector('.settings-view');
+    const identidad = raiz?.querySelector('.settings-grid');
+    if (!raiz || !identidad) return;
+
+    instalarGestionHero();
+    const carrusel = document.getElementById('hero-admin-panel');
+    if (!carrusel) return;
+    carrusel.style.maxWidth = 'none';
+    carrusel.style.width = '100%';
+    carrusel.style.margin = '0';
+    raiz.appendChild(carrusel);
+
+    raiz.querySelector('.settings-tabs')?.remove();
+    identidad.insertAdjacentHTML('beforebegin', `
+        <nav class="settings-tabs" role="tablist" aria-label="Secciones de configuración" style="display:flex;flex-wrap:wrap;gap:10px;margin:0 0 24px">
+            <button type="button" class="btn btn-primary" data-settings-tab="identidad" role="tab" aria-selected="true"><i class="fa-solid fa-building"></i> Identidad y cuotas</button>
+            <button type="button" class="btn btn-ghost" data-settings-tab="portada" role="tab" aria-selected="false" style="width:auto;border:1px solid var(--border);padding:10px 16px"><i class="fa-solid fa-images"></i> Portada y carrusel</button>
+        </nav>`);
+    const botones = [...raiz.querySelectorAll('[data-settings-tab]')];
+    const mostrar = pestaña => {
+        const esPortada = pestaña === 'portada';
+        identidad.classList.toggle('hidden', esPortada);
+        carrusel.classList.toggle('hidden', !esPortada);
+        botones.forEach(boton => {
+            const activo = boton.dataset.settingsTab === pestaña;
+            boton.className = activo ? 'btn btn-primary' : 'btn btn-ghost';
+            boton.style.width = 'auto';
+            boton.style.padding = '10px 16px';
+            boton.style.border = activo ? '1px solid var(--primary)' : '1px solid var(--border)';
+            boton.setAttribute('aria-selected', String(activo));
+        });
+        if (esPortada) window.cargarHeroAdmin();
+    };
+    botones.forEach(boton => boton.onclick = () => mostrar(boton.dataset.settingsTab));
+    mostrar('identidad');
+    await window.cargarHeroAdmin();
+};
+
+renderCalendarioInterno = function () {
+    const contenedor = document.getElementById('calendar');
+    if (!contenedor || !window.FullCalendar) return;
+    if (!zonasReservaActuales.length) {
+        contenedor.innerHTML = '<p class="empty-state">No hay zonas configuradas para consultar disponibilidad.</p>';
+        return;
+    }
+    const paleta = ['#2563eb', '#7c3aed', '#db2777', '#0891b2', '#c2410c', '#15803d', '#b45309', '#4f46e5'];
+    const colores = new Map(zonasReservaActuales.map((zona, indice) => [Number(zona.id), paleta[indice % paleta.length]]));
+    const leyenda = zonasReservaActuales.map(zona => `<span style="display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--text-main)"><i style="display:block;width:12px;height:12px;border-radius:50%;background:${colores.get(Number(zona.id))}"></i>${escapeHtml(zona.nombre)}</span>`).join('');
+    contenedor.innerHTML = `<div class="internal-calendar-heading"><div><p class="section-kicker">Agenda consolidada</p><h3>Reservas de todas las zonas</h3><p class="muted">Cada zona tiene un color. Selecciona una reserva para ver su detalle; al elegir una franja libre podrás crear una reserva interna.</p></div></div><div aria-label="Leyenda de zonas" style="display:flex;flex-wrap:wrap;gap:12px;margin:0 0 16px">${leyenda}</div><div id="calendar-interno" class="internal-zone-calendar"></div>`;
+    const eventos = reservasZonasActuales
+        .filter(reserva => ['pendiente', 'aprobada'].includes(reserva.estado))
+        .map(reserva => {
+            const evento = eventoReserva(reserva, true);
+            const color = colores.get(Number(reserva.zona_id)) || '#4f46e5';
+            return {
+                ...evento,
+                title: `${reserva.zona_nombre || 'Zona'} · ${reserva.inmueble_etiqueta || 'Inmueble no asignado'}`,
+                classNames: ['calendar-zone-event'],
+                backgroundColor: color,
+                borderColor: color,
+                textColor: '#ffffff',
+                extendedProps: { ...evento.extendedProps, zonaId: Number(reserva.zona_id) }
+            };
+        });
+    if (window.zonasCalendar) window.zonasCalendar.destroy();
+    window.zonasCalendar = new FullCalendar.Calendar(document.getElementById('calendar-interno'), {
+        initialView: 'timeGridWeek',
+        locale: 'es',
+        height: 'auto',
+        headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay,dayGridMonth' },
+        ...opcionesCalendarioSoloReservas(),
+        events: eventos,
+        dateClick: info => {
+            const fecha = fechaLocal(info.date);
+            if (fecha < fechaMinimaReserva(true)) return window.notificar('No puedes crear reservas en una fecha pasada.', 'warning');
+            const hora = info.allDay ? '08:00' : `${String(info.date.getHours()).padStart(2, '0')}:${String(info.date.getMinutes()).padStart(2, '0')}`;
+            window.abrirReservaInterna(0, fecha, 0, hora);
+        },
+        eventClick: info => window.abrirReservaInterna(Number(info.event.id))
+    });
+    window.zonasCalendar.render();
+};
+
+const cargarZonasSinCalendarioPersonalBase = loadZonas;
+loadZonas = async function () {
+    await cargarZonasSinCalendarioPersonalBase();
+    if (!['residente', 'propietario'].includes(currentUser?.rol)) return;
+    if (window.zonasCalendar) {
+        window.zonasCalendar.destroy();
+        window.zonasCalendar = null;
+    }
+    document.getElementById('calendar')?.closest('.card')?.remove();
+};

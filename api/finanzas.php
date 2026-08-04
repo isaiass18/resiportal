@@ -11,12 +11,22 @@ $userId = (int) $_SESSION['user_id'];
 $rol = $_SESSION['user_rol'];
 $conjuntoId = (int) $_SESSION['conjunto_id'];
 
-function inmuebleUsuario(PDO $pdo, int $userId, int $conjuntoId): ?array
+function inmueblesUsuario(PDO $pdo, int $userId, int $conjuntoId): array
 {
-    $stmt = $pdo->prepare('SELECT i.id, i.mora_actual, i.torre, i.apartamento, i.nomenclatura FROM inmuebles i JOIN relacion_inmuebles_usuarios r ON r.inmueble_id = i.id WHERE r.usuario_id = ? AND i.conjunto_id = ? LIMIT 1');
+    $stmt = $pdo->prepare('SELECT DISTINCT i.id, i.mora_actual, i.torre, i.apartamento, i.nomenclatura FROM inmuebles i JOIN relacion_inmuebles_usuarios r ON r.inmueble_id = i.id WHERE r.usuario_id = ? AND i.conjunto_id = ? ORDER BY i.torre, i.nomenclatura, i.id');
     $stmt->execute([$userId, $conjuntoId]);
-    return $stmt->fetch() ?: null;
+    return $stmt->fetchAll();
 }
+
+function inmuebleUsuario(PDO $pdo, int $userId, int $conjuntoId, int $inmuebleId = 0): ?array
+{
+    $inmuebles = inmueblesUsuario($pdo, $userId, $conjuntoId);
+    if (!$inmuebles) return null;
+    if ($inmuebleId <= 0) return $inmuebles[0];
+    foreach ($inmuebles as $inmueble) if ((int) $inmueble['id'] === $inmuebleId) return $inmueble;
+    return null;
+}
+
 function guardarSoporte(array $file, int $conjuntoId): string
 {
     if ($file['error'] !== UPLOAD_ERR_OK) responseJSON('error', 'No se pudo cargar el soporte');
@@ -33,22 +43,29 @@ function guardarSoporte(array $file, int $conjuntoId): string
 
 if ($action === 'mi_deuda') {
     if (!in_array($rol, ['residente', 'propietario'], true)) responseJSON('error', 'Permiso denegado');
-    $cuenta = inmuebleUsuario($pdo, $userId, $conjuntoId);
-    if (!$cuenta) responseJSON('success', '', ['mora_actual' => 0, 'inmueble' => null]);
-    responseJSON('success', '', ['mora_actual' => (float)$cuenta['mora_actual'], 'inmueble' => $cuenta]);
+    $inmuebles = inmueblesUsuario($pdo, $userId, $conjuntoId);
+    $inmuebleId = (int) ($_GET['inmueble_id'] ?? $_POST['inmueble_id'] ?? 0);
+    $cuenta = inmuebleUsuario($pdo, $userId, $conjuntoId, $inmuebleId);
+    if (!$cuenta) responseJSON('success', 'No tienes un inmueble asignado', ['mora_actual' => 0, 'inmueble' => null, 'inmuebles' => $inmuebles]);
+    responseJSON('success', '', ['mora_actual' => (float)$cuenta['mora_actual'], 'inmueble' => $cuenta, 'inmuebles' => $inmuebles]);
 }
 
 if ($action === 'mis_pagos') {
     if (!in_array($rol, ['residente', 'propietario'], true)) responseJSON('error', 'Permiso denegado');
-    $cuenta = inmuebleUsuario($pdo, $userId, $conjuntoId);
-    if (!$cuenta) responseJSON('error', 'No tienes un inmueble asignado');
+    $inmuebles = inmueblesUsuario($pdo, $userId, $conjuntoId);
+    $inmuebleId = (int) ($_GET['inmueble_id'] ?? $_POST['inmueble_id'] ?? 0);
+    $cuenta = inmuebleUsuario($pdo, $userId, $conjuntoId, $inmuebleId);
+    if (!$cuenta) {
+        if ($inmuebleId > 0 && $inmuebles) responseJSON('error', 'El inmueble seleccionado no está asociado a tu cuenta');
+        responseJSON('success', 'No tienes un inmueble asignado. Solicita a la administración que revise tu vínculo.', ['cuenta' => null, 'inmuebles' => [], 'historial' => [], 'cuotas' => [], 'proxima_cuota' => 0]);
+    }
     $pagos = $pdo->prepare('SELECT p.id, p.valor, p.metodo_pago, p.referencia, p.descripcion, p.soporte_archivo, p.estado, p.fecha_pago, u.nombre AS registrado_por_nombre FROM pagos p LEFT JOIN usuarios u ON u.id = p.registrado_por WHERE p.inmueble_id = ? ORDER BY p.fecha_pago DESC');
     $pagos->execute([$cuenta['id']]);
     $cuotas = $pdo->prepare('SELECT mes, anio, valor, estado, fecha_generacion FROM cuotas_administracion WHERE inmueble_id = ? ORDER BY anio DESC, mes DESC LIMIT 12');
     $cuotas->execute([$cuenta['id']]);
     $proxima = $pdo->prepare('SELECT cuota_administracion FROM inmuebles WHERE id = ? AND conjunto_id = ?');
     $proxima->execute([$cuenta['id'], $conjuntoId]);
-    responseJSON('success', '', ['cuenta' => $cuenta, 'historial' => $pagos->fetchAll(), 'cuotas' => $cuotas->fetchAll(), 'proxima_cuota' => (float) (($proxima->fetch()['cuota_administracion'] ?? 0))]);
+    responseJSON('success', '', ['cuenta' => $cuenta, 'inmuebles' => $inmuebles, 'historial' => $pagos->fetchAll(), 'cuotas' => $cuotas->fetchAll(), 'proxima_cuota' => (float) (($proxima->fetch()['cuota_administracion'] ?? 0))]);
 }
 if ($action === 'reportar_pago') {
     if (!in_array($rol, ['residente', 'propietario'], true)) responseJSON('error', 'Permiso denegado');
@@ -56,10 +73,11 @@ if ($action === 'reportar_pago') {
     $metodo = $_POST['metodo'] ?? '';
     $referencia = trim($_POST['referencia'] ?? '');
     $descripcion = trim($_POST['descripcion'] ?? '');
+    $inmuebleId = (int) ($_POST['inmueble_id'] ?? 0);
     if ($valor <= 0 || $referencia === '') responseJSON('error', 'Valor y referencia son obligatorios');
     if (!in_array($metodo, ['transferencia', 'consignacion', 'pse'], true)) responseJSON('error', 'Método de pago inválido');
-    $cuenta = inmuebleUsuario($pdo, $userId, $conjuntoId);
-    if (!$cuenta) responseJSON('error', 'No tienes un inmueble asignado');
+    $cuenta = inmuebleUsuario($pdo, $userId, $conjuntoId, $inmuebleId);
+    if (!$cuenta) responseJSON('error', 'No tienes un inmueble asignado o no puedes reportar pagos para esa unidad');
     $soporte = isset($_FILES['soporte']) && $_FILES['soporte']['error'] !== UPLOAD_ERR_NO_FILE ? guardarSoporte($_FILES['soporte'], $conjuntoId) : null;
     $stmt = $pdo->prepare("INSERT INTO pagos (inmueble_id, valor, metodo_pago, referencia, descripcion, soporte_archivo, registrado_por, estado) VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente')");
     $stmt->execute([$cuenta['id'], $valor, $metodo, $referencia, $descripcion ?: null, $soporte, $userId]);

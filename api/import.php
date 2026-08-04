@@ -92,13 +92,17 @@ function filasXlsx(string $ruta, int $indiceHoja = 0): array
     foreach ($datosHoja->children($namespace)->row as $filaXml) {
         $fila = [];
         foreach ($filaXml->children($namespace)->c as $celda) {
-            preg_match('/[A-Z]+/', (string) $celda['r'], $coincidencia);
+            // En algunos archivos XLSX, los atributos de SimpleXML no se exponen
+            // correctamente con la sintaxis de corchetes sobre nodos con namespace.
+            // Leerlos explícitamente preserva la referencia real (A1, B1, ..., AA1).
+            $atributos = $celda->attributes();
+            preg_match('/[A-Z]+/', (string) ($atributos['r'] ?? ''), $coincidencia);
             $columna = 0;
             foreach (str_split($coincidencia[0] ?? 'A') as $letra) $columna = $columna * 26 + (ord($letra) - 64);
             $indice = max(0, $columna - 1);
             while (count($fila) < $indice) $fila[] = '';
             $contenido = $celda->children($namespace);
-            $tipo = (string) $celda['t'];
+            $tipo = (string) ($atributos['t'] ?? '');
             if ($tipo === 's') $valor = $shared[(int) $contenido->v] ?? '';
             elseif ($tipo === 'inlineStr') $valor = textoXlsxImportacion($contenido->is, $namespace);
             else $valor = (string) $contenido->v;
