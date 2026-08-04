@@ -2306,9 +2306,9 @@ function renderCalendarioInterno() {
 loadZonas = async function () {
     const esInterno = ['admin', 'vigilante'].includes(currentUser?.rol);
     const [reservasResponse, zonasResponse, inmueblesResponse] = await Promise.all([
-        fetch('api/zonas.php?action=list'),
-        fetch('api/zonas.php?action=zonas_list'),
-        fetch('api/zonas.php?action=inmuebles_reservas')
+        fetch('api/zonas.php?action=list', { cache: 'no-store' }),
+        fetch('api/zonas.php?action=zonas_list', { cache: 'no-store' }),
+        fetch('api/zonas.php?action=inmuebles_reservas', { cache: 'no-store' })
     ]);
     const [reservasResult, zonasResult, inmueblesResult] = await Promise.all([reservasResponse.json(), zonasResponse.json(), inmueblesResponse.json()]);
     if (reservasResult.status !== 'success' || zonasResult.status !== 'success' || inmueblesResult.status !== 'success') {

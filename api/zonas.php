@@ -2,6 +2,8 @@
 session_start();
 require_once 'config.php';
 header('Content-Type: application/json');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 $publicConjuntoId = 1;
