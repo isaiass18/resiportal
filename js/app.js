@@ -2558,7 +2558,7 @@ window.solicitarTexto = async function ({ titulo, etiqueta, valor = '' }) {
 };
 
 function horarioServicioZona(zona) {
-    const coincidencias = String(zona?.horarios || '').trim().match(/^([01]\d|2[0-3]):[0-5]\d\s*[-–]\s*([01]\d|2[0-3]):[0-5]\d$/);
+    const coincidencias = String(zona?.horarios || '').trim().match(/^((?:[01]\d|2[0-3]):[0-5]\d)\s*[-–]\s*((?:[01]\d|2[0-3]):[0-5]\d)$/);
     if (!coincidencias || coincidencias[1] === coincidencias[2]) return null;
     const aMinutos = Number(coincidencias[1].slice(0, 2)) * 60 + Number(coincidencias[1].slice(3));
     const cMinutos = Number(coincidencias[2].slice(0, 2)) * 60 + Number(coincidencias[2].slice(3));
@@ -3289,20 +3289,25 @@ function prepararEditorZonaModal() {
     modal.setAttribute('aria-modal', 'true');
 }
 
+function horarioVisible(valor) {
+    const horario = String(valor ?? '').trim();
+    return horario || 'Sin horario definido';
+}
+
 function actualizarHorariosVisibles() {
     const zonasPorId = new Map(zonasReservaActuales.map(zona => [String(zona.id), zona]));
     const selectorZona = document.getElementById('reservaZonaId');
     selectorZona?.querySelectorAll('option[value]').forEach(opcion => {
         const zona = zonasPorId.get(opcion.value);
-        if (zona) opcion.textContent = `${zona.nombre} · ${formatearHorarioServicio(zona.horarios)}`;
+        if (zona) opcion.textContent = `${zona.nombre} · ${horarioVisible(zona.horarios)}`;
     });
     document.querySelectorAll('#tb-zonas-config tr').forEach((fila, indice) => {
         const zona = zonasReservaActuales[indice];
-        if (zona && fila.children[2]) fila.children[2].textContent = formatearHorarioServicio(zona.horarios);
+        if (zona && fila.children[2]) fila.children[2].textContent = horarioVisible(zona.horarios);
     });
     document.querySelectorAll('#public-zonas-grid p').forEach(linea => {
         const coincidencia = linea.textContent.match(/^\s*Horario:\s*(.+)$/i);
-        if (coincidencia) linea.textContent = `Horario: ${formatearHorarioServicio(coincidencia[1])}`;
+        if (coincidencia) linea.textContent = `Horario: ${horarioVisible(coincidencia[1])}`;
     });
 }
 

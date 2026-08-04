@@ -52,7 +52,7 @@ function horaValida(string $hora): bool
 
 function horarioServicio(string $horarios): ?array
 {
-    if (!preg_match('/^([01]\\d|2[0-3]):[0-5]\\d\\s*[-–]\\s*([01]\\d|2[0-3]):[0-5]\\d$/', trim($horarios), $coincidencias)) return null;
+    if (!preg_match('/^((?:[01]\\d|2[0-3]):[0-5]\\d)\\s*[-–]\\s*((?:[01]\\d|2[0-3]):[0-5]\\d)$/', trim($horarios), $coincidencias)) return null;
     $apertura = $coincidencias[1];
     $cierre = $coincidencias[2];
     if ($apertura === $cierre) return null;
